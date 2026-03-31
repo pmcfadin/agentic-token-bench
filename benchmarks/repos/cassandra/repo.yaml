@@ -1,6 +1,14 @@
 # Apache Cassandra benchmark repository configuration
+#
+# Pinned to cassandra-5.0.7 (released 2026-03-17), the latest stable 5.0.x
+# release as of v1 planning. This tag was chosen because:
+#   - It is a stable GA release (no alpha/beta/rc suffix)
+#   - The 5.0 series is the current active release line
+#   - The Java codebase is well-suited for benchmark tasks across all 6 tool
+#     families (read, search, edit, shell, test, refactor)
 repo_id: cassandra
 name: Apache Cassandra
 url: https://github.com/apache/cassandra.git
-# pinned_commit: <to be selected in Phase 1>
-# checkout_dir: benchmarks/repos/cassandra/checkout
+pinned_commit: 0269fd5665751e8a6d8eab852e0f66c142b10ee6
+tag: cassandra-5.0.7
+checkout_dir: benchmarks/repos/cassandra/checkout
