@@ -1,0 +1,30 @@
+{
+  "agent_id": "ClaudeAdapter",
+  "generated_at": "2026-03-31T19:23:41.353150Z",
+  "repo_commit": "0269fd5665751e8a6d8eab852e0f66c142b10ee6",
+  "families": [
+    {
+      "family": "ripgrep",
+      "baseline": {
+        "variant": "baseline",
+        "run_count": 2,
+        "avg_tokens": 14800.0,
+        "validation_pass_rate": 1.0,
+        "first_pass_success_rate": 1.0,
+        "avg_repair_iterations": 0.0,
+        "avg_elapsed_seconds": 45.05
+      },
+      "tool_variant": {
+        "variant": "tool_variant",
+        "run_count": 2,
+        "avg_tokens": 7900.0,
+        "validation_pass_rate": 1.0,
+        "first_pass_success_rate": 1.0,
+        "avg_repair_iterations": 0.0,
+        "avg_elapsed_seconds": 24.95
+      },
+      "token_delta": -6900.0,
+      "token_reduction_pct": -46.62162162162162
+    }
+  ]
+}
