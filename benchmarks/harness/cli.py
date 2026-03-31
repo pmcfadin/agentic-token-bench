@@ -1,5 +1,10 @@
 """CLI for the agentic-token-bench benchmark harness."""
 
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
 import typer
 
 app = typer.Typer(
@@ -7,12 +12,78 @@ app = typer.Typer(
     help="agentic-token-bench: benchmark token-saving tools in agentic coding workflows.",
 )
 
+_QUAL_DIR = Path("benchmarks/qualification")
+_ADAPTER_VERSION = "0.1.0"
+
+_SUPPORTED_AGENTS = ("claude", "codex", "gemini-cli")
+
+
+def _build_adapter(agent: str):  # type: ignore[return]
+    """Instantiate and return the adapter for *agent*.
+
+    Args:
+        agent: One of "claude", "codex", or "gemini-cli".
+
+    Returns:
+        An AgentAdapter subclass instance.
+
+    Raises:
+        typer.BadParameter: When *agent* is not a supported name.
+    """
+    if agent == "claude":
+        from agents.claude.adapter import ClaudeAdapter
+
+        return ClaudeAdapter()
+    if agent == "codex":
+        from agents.codex.adapter import CodexAdapter
+
+        return CodexAdapter()
+    if agent == "gemini-cli":
+        from agents.gemini_cli.adapter import GeminiCliAdapter
+
+        return GeminiCliAdapter()
+    raise typer.BadParameter(
+        f"Unknown agent {agent!r}.  Supported agents: {', '.join(_SUPPORTED_AGENTS)}"
+    )
+
 
 @app.command()
 def qualify_agent(agent: str = typer.Argument(help="Agent ID to qualify")) -> None:
-    """Run qualification probes for an agent adapter."""
-    typer.echo(f"qualify-agent: not yet implemented (agent={agent})")
-    raise typer.Exit(1)
+    """Run qualification probes for an agent adapter.
+
+    Writes results to benchmarks/qualification/{agent}.json and prints
+    PASS or FAIL.
+
+    Supported agents: claude, codex, gemini-cli.
+    """
+    from benchmarks.harness.qualification import run_qualification
+
+    try:
+        adapter = _build_adapter(agent)
+    except typer.BadParameter as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+
+    try:
+        record = run_qualification(
+            adapter=adapter,
+            agent_id=agent,
+            adapter_version=_ADAPTER_VERSION,
+        )
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"qualify-agent: run_qualification raised an exception: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    _QUAL_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = _QUAL_DIR / f"{agent}.json"
+    out_path.write_text(json.dumps(record.model_dump(), indent=2))
+
+    if record.qualified:
+        typer.echo(f"PASS  {agent}  →  {out_path}")
+    else:
+        reason = record.failure_reason or "unknown failure"
+        typer.echo(f"FAIL  {agent}  ({reason})  →  {out_path}")
+        raise typer.Exit(1)
 
 
 @app.command()
