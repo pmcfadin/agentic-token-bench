@@ -1,0 +1,63 @@
+task_id: cassandra-ripgrep-02
+title: Locate all references for a targeted compaction strategy change
+family: ripgrep
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Find all source files in the Cassandra repository that reference
+  SizeTieredCompactionStrategy using ripgrep with minimal broad reads.
+  Do not edit code.
+task_description: >
+  Apache Cassandra ships several compaction strategies, one of which is
+  SizeTieredCompactionStrategy (STCS). If you were planning a targeted change
+  to STCS behavior, you would first need a complete picture of every source
+  file that references it.
+
+  Your task is to locate all source files in the pinned Cassandra repository
+  that contain a reference to SizeTieredCompactionStrategy. Focus on files
+  that directly reference the strategy by name — do not follow transitive
+  imports or broad class hierarchies. Avoid opening files that are not in
+  your candidate list.
+
+  Do not modify any files. Produce only a structured answer listing the
+  discovered paths relative to the repository root.
+success_criteria:
+  - All source files directly referencing SizeTieredCompactionStrategy identified
+  - No false positives (files that do not contain the reference) in the answer
+  - No source files were modified
+validation_commands:
+  - "python scripts/validate_cassandra_ripgrep_02.py --task cassandra-ripgrep-02"
+human_review_triggers:
+  - "validation output is partial"
+  - "answer contains paths not present in the repository"
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Use ripgrep to search the repository for all files containing the
+      string SizeTieredCompactionStrategy. Record the full list of matching
+      file paths before proceeding.
+    required_tool: ripgrep
+    allowed_tools: [ripgrep]
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [candidate_paths]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Review the discovered candidates and produce the final structured answer
+      listing all file paths that reference SizeTieredCompactionStrategy.
+      Remove any paths that do not exist or are not genuine references.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby, ripgrep]
+    completion_contract:
+      kind: structured_answer
+      fields: [reference_paths]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

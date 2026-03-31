@@ -1,0 +1,65 @@
+task_id: cassandra-ripgrep-01
+title: Locate the implementation and config path for read repair behavior
+family: ripgrep
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Find the primary Java source file that implements read repair, the
+  corresponding configuration entry in cassandra.yaml, and one test file
+  that exercises read repair behavior. Do not edit code.
+task_description: >
+  Apache Cassandra performs background read repair to keep replicas in sync.
+  Your task is to locate three artifacts inside the pinned Cassandra source
+  tree:
+
+  (1) The primary Java source file that implements or enforces read repair
+  logic (e.g., the class that schedules or coordinates read repair).
+
+  (2) The configuration key in cassandra.yaml (or the YAML reference file)
+  that controls read repair behavior.
+
+  (3) One test file that exercises or validates read repair behavior.
+
+  Do not modify any files. Produce only a structured answer containing the
+  three paths relative to the repository root.
+success_criteria:
+  - Correct source file path identified (a Java class implementing read repair)
+  - Correct configuration key path or YAML file identified
+  - Correct test file path identified
+  - No source files were modified
+validation_commands:
+  - "python scripts/validate_cassandra_ripgrep_01.py --task cassandra-ripgrep-01"
+human_review_triggers:
+  - "validation output is partial"
+  - "more than one candidate path returned for any field"
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Use ripgrep to locate candidate Java source files, configuration
+      references, and test files related to read repair in the Cassandra
+      source tree. Narrow the candidate list to the most likely paths before
+      proceeding.
+    required_tool: ripgrep
+    allowed_tools: [ripgrep]
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [candidate_source_paths, candidate_config_paths, candidate_test_paths]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Review the discovered candidates and produce the final structured answer
+      with exactly one path for each required field.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby, ripgrep]
+    completion_contract:
+      kind: structured_answer
+      fields: [source_path, config_path, test_path]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true
