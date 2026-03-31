@@ -154,9 +154,66 @@ def run_family(
 
 
 @app.command()
-def run_suite(agent: str = typer.Option(help="Agent ID")) -> None:
-    """Run the full official benchmark suite."""
-    typer.echo(f"run-suite: not yet implemented (agent={agent})")
+def run_suite(
+    agent: str = typer.Option(help="Agent ID"),
+    tasks_dir: str = typer.Option(
+        default="benchmarks/tasks/cassandra/official",
+        help="Directory containing task YAML manifests",
+    ),
+    list_only: bool = typer.Option(
+        default=False,
+        help="List available tasks without running them",
+    ),
+) -> None:
+    """Run the full official benchmark suite.
+
+    When --list-only is set, loads and displays all available task manifests
+    from the tasks directory without executing any runs.
+    """
+    import yaml
+
+    from benchmarks.harness.models import TaskManifest
+
+    tasks_path = Path(tasks_dir)
+    if not tasks_path.exists():
+        typer.echo(f"run-suite: tasks directory not found: {tasks_path}", err=True)
+        raise typer.Exit(1)
+
+    task_files = sorted(tasks_path.glob("*.yaml"))
+    if not task_files:
+        typer.echo(f"run-suite: no YAML task files found under {tasks_path}", err=True)
+        raise typer.Exit(1)
+
+    manifests: list[TaskManifest] = []
+    for task_file in task_files:
+        try:
+            raw = yaml.safe_load(task_file.read_text(encoding="utf-8"))
+            manifests.append(TaskManifest.model_validate(raw))
+        except Exception as exc:  # noqa: BLE001
+            typer.echo(f"run-suite: skipping {task_file} ({exc})", err=True)
+
+    if not manifests:
+        typer.echo("run-suite: no valid task manifests loaded", err=True)
+        raise typer.Exit(1)
+
+    families = sorted({m.family for m in manifests})
+    typer.echo(
+        f"run-suite: loaded {len(manifests)} tasks across {len(families)} families"
+        f"  agent={agent}"
+    )
+    typer.echo(f"  families: {', '.join(families)}")
+    for manifest in manifests:
+        typer.echo(f"  • {manifest.task_id}  [{manifest.family}]  {manifest.title}")
+
+    if list_only:
+        return
+
+    typer.echo(
+        "run-suite: full execution not yet implemented."
+        "  Use 'atb run-task' for individual runs or"
+        " 'uv run scripts/generate_fixture_runs.py' for fixture generation.",
+        err=True,
+    )
     raise typer.Exit(1)
 
 
