@@ -16,9 +16,14 @@ from benchmarks.harness.models import QualificationRecord
 # Synthetic step results for use in probes
 # ---------------------------------------------------------------------------
 
-_PROBE_WORKSPACE = Path("/tmp/qualification-probe")
-
 _MINIMAL_STEP_ENV: dict[str, str] = {}
+
+
+def _ensure_probe_workspace() -> Path:
+    """Create and return a temporary workspace directory for probes."""
+    workspace = Path("/tmp/qualification-probe")
+    workspace.mkdir(parents=True, exist_ok=True)
+    return workspace
 
 
 def _make_step_result(
@@ -43,21 +48,28 @@ def _make_step_result(
 
 
 def probe_token_reporting(adapter: AgentAdapter) -> tuple[bool, str]:
-    """Check whether extract_reported_tokens works on a synthetic step result.
+    """Check whether the adapter can extract tokens from a real CLI invocation.
 
-    The probe constructs a minimal StepResult and calls extract_reported_tokens.
-    If the method returns a ReportedTokens instance with non-negative values and
-    a non-empty evidence_snippet, the probe passes.
+    Runs a live step via run_step(), then calls extract_reported_tokens on the
+    real output.  This validates the full pipeline: CLI invocation → output
+    capture → token parsing → evidence extraction.
 
     Returns:
         (passed, message)
     """
-    step_result = _make_step_result(
-        stdout="Tokens used: input=10, output=5, total=15",
-        stderr="",
-        exit_status=0,
-        step_metadata={"reported_tokens": {"input": 10, "output": 5, "total": 15}},
-    )
+    try:
+        step_result = adapter.run_step(
+            prompt="Reply with the single word 'ok' and nothing else.",
+            step_env=_MINIMAL_STEP_ENV,
+            workspace=_ensure_probe_workspace(),
+            timeout=60.0,
+        )
+    except Exception as exc:
+        return False, f"run_step raised an exception during token probe: {exc}"
+
+    if step_result is None:
+        return False, "run_step returned None during token probe"
+
     try:
         tokens = adapter.extract_reported_tokens(step_result)
     except Exception as exc:
@@ -94,7 +106,7 @@ def probe_no_tool_step(adapter: AgentAdapter) -> tuple[bool, str]:
         result = adapter.run_step(
             prompt="Say hello.",
             step_env=_MINIMAL_STEP_ENV,
-            workspace=_PROBE_WORKSPACE,
+            workspace=_ensure_probe_workspace(),
             timeout=30.0,
         )
     except Exception as exc:
@@ -126,7 +138,7 @@ def probe_forced_tool(adapter: AgentAdapter) -> tuple[bool, str]:
         result = adapter.run_step(
             prompt="Use ripgrep to search for 'TODO' in the workspace.",
             step_env=step_env,
-            workspace=_PROBE_WORKSPACE,
+            workspace=_ensure_probe_workspace(),
             timeout=30.0,
         )
     except Exception as exc:
@@ -164,7 +176,7 @@ def probe_blocked_tool(adapter: AgentAdapter) -> tuple[bool, str]:
         result = adapter.run_step(
             prompt="Use ripgrep to search for something.",
             step_env=step_env,
-            workspace=_PROBE_WORKSPACE,
+            workspace=_ensure_probe_workspace(),
             timeout=30.0,
         )
     except Exception:
@@ -202,7 +214,7 @@ def probe_completion(adapter: AgentAdapter) -> tuple[bool, str]:
         result = adapter.run_step(
             prompt="Provide a final answer: the answer is 42.",
             step_env=_MINIMAL_STEP_ENV,
-            workspace=_PROBE_WORKSPACE,
+            workspace=_ensure_probe_workspace(),
             timeout=30.0,
         )
     except Exception as exc:

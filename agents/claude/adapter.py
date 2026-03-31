@@ -145,7 +145,7 @@ class ClaudeAdapter(AgentAdapter):
             proc = subprocess.run(
                 cmd,
                 cwd=workspace,
-                env=step_env,
+                env=step_env or None,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
