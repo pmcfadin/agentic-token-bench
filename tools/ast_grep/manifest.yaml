@@ -1,0 +1,9 @@
+id: ast-grep
+name: ast-grep
+version: "0.1.0"
+category: transformation
+description: Syntax-aware code rewrites via AST patterns
+supported_languages: [java, python, typescript, rust]
+waste_classes: [transformation_waste]
+dependencies: [ast-grep]
+risk_level: medium

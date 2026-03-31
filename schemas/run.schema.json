@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Run Record",
+  "description": "Schema for benchmark run records.",
+  "type": "object",
+  "required": [
+    "run_id", "task_id", "family", "variant", "agent_id",
+    "adapter_version", "repo_commit", "status", "validity",
+    "validation_status"
+  ],
+  "properties": {
+    "run_id": { "type": "string" },
+    "task_id": { "type": "string" },
+    "family": { "type": "string" },
+    "variant": { "type": "string", "enum": ["baseline", "tool_variant"] },
+    "agent_id": { "type": "string" },
+    "adapter_version": { "type": "string" },
+    "repo_commit": { "type": "string" },
+    "status": { "type": "string", "enum": ["passed", "failed", "error"] },
+    "validity": { "type": "string", "enum": ["valid", "invalid"] },
+    "reported_input_tokens": { "type": ["integer", "null"] },
+    "reported_output_tokens": { "type": ["integer", "null"] },
+    "reported_total_tokens": { "type": ["integer", "null"] },
+    "elapsed_seconds": { "type": ["number", "null"] },
+    "repair_iterations": { "type": "integer" },
+    "validation_status": { "type": "string", "enum": ["passed", "failed", "skipped"] },
+    "files_changed": { "type": "integer" },
+    "diff_size": { "type": "integer" },
+    "artifact_dir": { "type": "string" },
+    "started_at": { "type": ["string", "null"], "format": "date-time" },
+    "finished_at": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

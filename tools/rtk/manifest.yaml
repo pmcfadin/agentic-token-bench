@@ -1,0 +1,9 @@
+id: rtk
+name: RTK
+version: "0.1.0"
+category: output_compression
+description: CLI output compression for reduced token delivery
+supported_languages: [any]
+waste_classes: [execution_output_waste]
+dependencies: [rtk]
+risk_level: low

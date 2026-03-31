@@ -1,0 +1,9 @@
+id: fastmod
+name: fastmod
+version: "0.1.0"
+category: transformation
+description: Text-shaped repeated replacements across files
+supported_languages: [any]
+waste_classes: [transformation_waste]
+dependencies: [fastmod]
+risk_level: medium

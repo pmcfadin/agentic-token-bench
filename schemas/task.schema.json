@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Task Manifest",
+  "description": "Schema for official benchmark task manifests.",
+  "type": "object",
+  "required": [
+    "task_id", "title", "family", "repo", "pinned_commit",
+    "objective", "task_description", "success_criteria",
+    "validation_commands", "steps", "baseline_policy", "tool_variant_policy"
+  ],
+  "properties": {
+    "task_id": { "type": "string" },
+    "title": { "type": "string" },
+    "family": { "type": "string" },
+    "repo": { "type": "string" },
+    "pinned_commit": { "type": "string" },
+    "objective": { "type": "string" },
+    "task_description": { "type": "string" },
+    "success_criteria": { "type": "array", "items": { "type": "string" } },
+    "validation_commands": { "type": "array", "items": { "type": "string" } },
+    "human_review_triggers": { "type": "array", "items": { "type": "string" } },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step_id", "name", "objective", "completion_contract"],
+        "properties": {
+          "step_id": { "type": "string" },
+          "name": { "type": "string" },
+          "objective": { "type": "string" },
+          "required_tool": { "type": ["string", "null"] },
+          "allowed_tools": { "type": "array", "items": { "type": "string" } },
+          "blocked_tools": { "type": "array", "items": { "type": "string" } },
+          "completion_contract": {
+            "type": "object",
+            "properties": {
+              "kind": { "type": "string" },
+              "fields": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "artifact_requirements": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "baseline_policy": {
+      "type": "object",
+      "properties": {
+        "remove_tool_under_test": { "type": "boolean" }
+      }
+    },
+    "tool_variant_policy": {
+      "type": "object",
+      "properties": {
+        "enforce_tool_under_test": { "type": "boolean" }
+      }
+    }
+  }
+}

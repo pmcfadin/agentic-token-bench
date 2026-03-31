@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Event Record",
+  "description": "Schema for trace event records (JSONL).",
+  "type": "object",
+  "required": ["timestamp", "run_id", "step_id", "event_type", "actor"],
+  "properties": {
+    "timestamp": { "type": "string", "format": "date-time" },
+    "run_id": { "type": "string" },
+    "step_id": { "type": "string" },
+    "event_type": { "type": "string" },
+    "actor": { "type": "string" },
+    "payload": { "type": "object" }
+  }
+}

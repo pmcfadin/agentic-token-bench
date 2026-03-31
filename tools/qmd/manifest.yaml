@@ -1,0 +1,9 @@
+id: qmd
+name: QMD
+version: "0.1.0"
+category: retrieval
+description: Retrieval minimization via indexed document lookup
+supported_languages: [any]
+waste_classes: [retrieval_waste]
+dependencies: [qmd]
+risk_level: low

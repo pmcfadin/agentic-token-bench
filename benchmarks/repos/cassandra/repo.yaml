@@ -1,0 +1,6 @@
+# Apache Cassandra benchmark repository configuration
+repo_id: cassandra
+name: Apache Cassandra
+url: https://github.com/apache/cassandra.git
+# pinned_commit: <to be selected in Phase 1>
+# checkout_dir: benchmarks/repos/cassandra/checkout

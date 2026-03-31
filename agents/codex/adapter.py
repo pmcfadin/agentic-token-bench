@@ -1,0 +1,1 @@
+"""codex agent adapter."""

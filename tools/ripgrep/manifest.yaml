@@ -1,0 +1,9 @@
+id: ripgrep
+name: ripgrep
+version: "0.1.0"
+category: discovery
+description: Fast file content search for code discovery
+supported_languages: [any]
+waste_classes: [discovery_waste]
+dependencies: [ripgrep]
+risk_level: low

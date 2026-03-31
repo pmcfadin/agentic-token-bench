@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Qualification Record",
+  "description": "Schema for agent qualification results.",
+  "type": "object",
+  "required": ["agent_id", "adapter_version", "qualified"],
+  "properties": {
+    "agent_id": { "type": "string" },
+    "adapter_version": { "type": "string" },
+    "qualified": { "type": "boolean" },
+    "reported_token_support": { "type": "boolean" },
+    "forced_tool_support": { "type": "boolean" },
+    "trace_support": { "type": "boolean" },
+    "run_completion_support": { "type": "boolean" },
+    "failure_reason": { "type": ["string", "null"] },
+    "evidence_paths": { "type": "array", "items": { "type": "string" } }
+  }
+}

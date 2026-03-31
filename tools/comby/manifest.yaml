@@ -1,0 +1,9 @@
+id: comby
+name: Comby
+version: "0.1.0"
+category: transformation
+description: Structural code transformations via pattern templates
+supported_languages: [any]
+waste_classes: [transformation_waste]
+dependencies: [comby]
+risk_level: medium
