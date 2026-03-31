@@ -138,3 +138,37 @@ class EventRecord(BaseModel):
     event_type: str
     actor: str
     payload: dict = Field(default_factory=dict)
+
+
+# --- Scorecard models ---
+
+
+class VariantMetrics(BaseModel):
+    """Averaged metrics for one variant (baseline or tool_variant) within a family."""
+
+    variant: Variant
+    run_count: int
+    avg_tokens: float | None = None
+    validation_pass_rate: float | None = None
+    first_pass_success_rate: float | None = None
+    avg_repair_iterations: float | None = None
+    avg_elapsed_seconds: float | None = None
+
+
+class FamilyScorecard(BaseModel):
+    """Per-family comparison between the baseline and tool_variant."""
+
+    family: str
+    baseline: VariantMetrics
+    tool_variant: VariantMetrics
+    token_delta: float | None = None
+    token_reduction_pct: float | None = None
+
+
+class SuiteScorecard(BaseModel):
+    """Full suite scorecard aggregating all family results with suite-level metadata."""
+
+    agent_id: str
+    generated_at: datetime
+    repo_commit: str
+    families: list[FamilyScorecard] = Field(default_factory=list)
