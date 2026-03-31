@@ -1,0 +1,57 @@
+task_id: cassandra-ripgrep-01
+title: Locate the implementation and config path for a specific configuration behavior
+family: ripgrep
+repo: cassandra
+pinned_commit: "<PINNED_COMMIT>"
+objective: >
+  Find the source file, related configuration entry, and one validating test
+  for the described Cassandra behavior. Do not edit code.
+task_description: >
+  Apache Cassandra exposes a configurable read repair chance setting that
+  controls background read repair behavior. Your task is to locate:
+  (1) the primary Java source file that implements or enforces this setting,
+  (2) the corresponding configuration key in the Cassandra YAML configuration
+  reference, and (3) one test file that exercises or validates this setting.
+
+  Do not modify any files. Produce only a structured answer with the three
+  paths.
+success_criteria:
+  - Correct source file path identified (e.g., the class that reads or enforces the setting)
+  - Correct configuration key path or file identified
+  - Correct test file path identified
+  - No source files were modified
+validation_commands:
+  - "python scripts/validate_locate_paths.py --task cassandra-ripgrep-01"
+human_review_triggers:
+  - "validation output is partial"
+  - "more than one candidate path returned for any field"
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Use ripgrep to locate candidate source files, configuration references,
+      and test files related to the target setting. Narrow the candidate list
+      to the most likely paths before proceeding.
+    required_tool: ripgrep
+    allowed_tools: [ripgrep]
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [candidate_source_paths, candidate_config_paths, candidate_test_paths]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Review the discovered candidates and produce the final structured answer
+      with exactly one path for each required field.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby, ripgrep]
+    completion_contract:
+      kind: structured_answer
+      fields: [source_path, config_path, test_path]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true
