@@ -78,11 +78,21 @@ def load_manifest(path: Path) -> ToolManifest:
 
 
 class ToolWrapper(ABC):
-    """Base class for tool wrappers."""
+    """Abstract base class every benchmarked tool wrapper must extend.
+
+    Subclasses must implement :meth:`manifest`, :meth:`invoke`, and
+    :meth:`record_invocation`.  Attempting to instantiate this class
+    directly or any subclass that leaves abstract methods unimplemented
+    will raise :exc:`TypeError`.
+    """
 
     @abstractmethod
     def manifest(self) -> ToolManifest:
-        """Return this tool's manifest."""
+        """Return the static :class:`ToolManifest` describing this tool.
+
+        Returns:
+            A fully-populated :class:`ToolManifest` for the wrapped tool.
+        """
         ...
 
     @abstractmethod
@@ -114,5 +124,15 @@ class ToolWrapper(ABC):
         step_id: str,
         run_id: str,
     ) -> InvocationRecord:
-        """Create a structured invocation record for the trace."""
+        """Create a structured :class:`InvocationRecord` for the trace log.
+
+        Args:
+            result: The :class:`InvocationResult` returned by :meth:`invoke`.
+            args: The original command-line arguments passed to :meth:`invoke`.
+            step_id: Identifier of the benchmark step that triggered the call.
+            run_id: Identifier of the overall benchmark run.
+
+        Returns:
+            An :class:`InvocationRecord` suitable for appending to a trace.
+        """
         ...
