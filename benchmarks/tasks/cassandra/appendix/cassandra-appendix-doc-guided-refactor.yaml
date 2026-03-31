@@ -1,0 +1,120 @@
+task_id: cassandra-appendix-doc-guided-refactor
+title: Retrieve architectural context with qmd, then apply a structural rewrite with comby
+track: appendix
+family: appendix
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Use qmd to retrieve the relevant architectural passage describing
+  Cassandra's hint delivery retry policy, then use comby to rewrite all Java
+  call sites that use the deprecated `HintedHandoffManager.instance.submit()`
+  pattern to the new `HintsService.instance.write()` pattern. Demonstrates a
+  retrieval-then-transformation workflow.
+task_description: >
+  Apache Cassandra replaced `HintedHandoffManager` with `HintsService` in a
+  major refactoring of the hints subsystem. Scattered across the codebase are
+  call sites that still reference the old submission pattern
+  `HintedHandoffManager.instance.submit(endpoint, hint)`. These must be
+  migrated to `HintsService.instance.write(endpoint, hint)`.
+
+  The structure of both call sites is identical except for the receiver class
+  name and method name. This makes it a good candidate for comby's structural
+  pattern matching after minimal context retrieval.
+
+  This is a two-phase workflow:
+
+  (1) Retrieval phase — use qmd to retrieve the passage in
+  `doc/source/architecture/hints.rst` (or the nearest equivalent hints
+  documentation file) that describes the write path and the migration note.
+  Extract the old class name, old method name, new class name, and new method
+  name from the retrieved passage. Do not read the file directly; use qmd.
+
+  (2) Transformation phase — use comby with the pattern
+  `HintedHandoffManager.instance.submit(:[endpoint], :[hint])` to locate and
+  rewrite all matching Java call sites under `src/` to
+  `HintsService.instance.write(:[endpoint], :[hint])`. Record the files
+  changed and rewrite count.
+
+  (3) Confirm that `HintedHandoffManager.instance.submit` no longer appears
+  in any Java source file after the rewrite.
+
+  Produce a structured answer with the retrieved migration details, the list
+  of files changed, and the post-rewrite match count.
+success_criteria:
+  - qmd was used to retrieve the relevant documentation passage
+  - The retrieved passage identifies the old and new class/method names
+  - comby was used to perform the structural rewrite
+  - No call sites matching `HintedHandoffManager.instance.submit` remain after the rewrite
+  - Files changed list is provided in the answer
+validation_commands:
+  - "python scripts/validate_cassandra_appendix_doc_guided_refactor.py --task cassandra-appendix-doc-guided-refactor"
+human_review_triggers:
+  - "qmd retrieval returns no passage"
+  - "comby rewrite count is zero"
+  - "old call pattern still present in any Java file after the rewrite"
+steps:
+  - step_id: retrieve
+    name: retrieve
+    objective: >
+      Use qmd to retrieve the architectural passage in the Cassandra hints
+      documentation that describes the hints write path and the migration
+      from `HintedHandoffManager` to `HintsService`. Extract the old class
+      name, old method name, new class name, and new method name from the
+      passage. Do not open the documentation file directly.
+    required_tool: qmd
+    allowed_tools: [qmd]
+    blocked_tools: [ripgrep, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [old_class, old_method, new_class, new_method, source_passage]
+    artifact_requirements: [step_trace]
+  - step_id: rewrite
+    name: rewrite
+    objective: >
+      Use comby with the Java pattern
+      `HintedHandoffManager.instance.submit(:[endpoint], :[hint])` to
+      locate all matching call sites under `src/` and rewrite each one to
+      `HintsService.instance.write(:[endpoint], :[hint])`. Record the files
+      changed and total rewrite count.
+    required_tool: comby
+    allowed_tools: [comby]
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, rewrite_count]
+    artifact_requirements: [step_trace]
+  - step_id: verify
+    name: verify
+    objective: >
+      Confirm that `HintedHandoffManager.instance.submit` no longer appears
+      in any Java source file under `src/` after the comby rewrite.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [remaining_occurrences, verification_passed]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the retrieved migration
+      details, the list of files changed, the rewrite count, and the
+      verification result.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [migration_details, files_changed, rewrite_count, verification_passed]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: false
+tool_variant_policy:
+  enforce_tool_under_test: false
+appendix_note: >
+  This task is Track B appendix material. It demonstrates tool composition
+  (qmd documentation retrieval to obtain migration context, followed by comby
+  structural rewrite) in a realistic Cassandra workflow. It is not official
+  scorecard material and must not be used as the basis for single-tool
+  attribution claims.

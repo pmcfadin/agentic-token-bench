@@ -1,0 +1,114 @@
+task_id: cassandra-appendix-compressed-build-fix
+title: Compress noisy test output with rtk, then apply a syntax fix with ast-grep
+track: appendix
+family: appendix
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Use rtk to compress a simulated noisy test failure log down to the
+  actionable error, then use ast-grep to locate and fix the specific Java
+  call site identified from the compressed output. Demonstrates a
+  compression-then-transformation workflow.
+task_description: >
+  A simulated test run for Apache Cassandra produces several hundred lines of
+  output. Embedded within that output is a single failing assertion in
+  `StorageServiceTest` that points to a deprecated method call:
+  `StorageService.instance.forceTerminateAllRepairSessions()`. The correct
+  replacement is `StorageService.instance.terminateAllRepairSessions(false)`.
+
+  This is a two-phase workflow:
+
+  (1) Compression phase — use rtk to compress the provided test log file
+  `benchmarks/fixtures/cassandra-build-noisy-output.txt` and extract the
+  actionable failure. The expected output is the file path, class name,
+  method name, and line number of the failing assertion. rtk must be used
+  to process the log; do not read the raw log directly.
+
+  (2) Fix phase — use ast-grep with a Java pattern to locate all call sites
+  of `forceTerminateAllRepairSessions()` under `src/` and rewrite them to
+  `terminateAllRepairSessions(false)`. The fix must target Java source files
+  only.
+
+  (3) Confirm that the method name no longer appears in the codebase after
+  the rewrite.
+
+  Produce a structured answer with the extracted failure details, the list of
+  files changed by ast-grep, and the post-fix match count.
+success_criteria:
+  - rtk was used to process the test log
+  - The extracted failure identifies the correct class and deprecated method name
+  - ast-grep was used to perform the rewrite
+  - No occurrences of `forceTerminateAllRepairSessions` remain after the fix
+  - Files changed list is provided in the answer
+validation_commands:
+  - "python scripts/validate_cassandra_appendix_compressed_build_fix.py --task cassandra-appendix-compressed-build-fix"
+human_review_triggers:
+  - "rtk output does not contain the failing class name"
+  - "ast-grep rewrite count is zero"
+  - "old method name still present in any Java file after the run"
+steps:
+  - step_id: compress
+    name: compress
+    objective: >
+      Use rtk to process the test log at
+      `benchmarks/fixtures/cassandra-build-noisy-output.txt`. Extract the
+      actionable failure from the compressed output: identify the failing
+      test class, the deprecated method name, and the source line reference.
+      Do not read the raw log file directly.
+    required_tool: rtk
+    allowed_tools: [rtk]
+    blocked_tools: [ripgrep, qmd, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [failing_class, deprecated_method, source_reference]
+    artifact_requirements: [step_trace]
+  - step_id: fix
+    name: fix
+    objective: >
+      Use ast-grep to locate all Java call sites of
+      `forceTerminateAllRepairSessions()` under `src/` and rewrite them to
+      `terminateAllRepairSessions(false)`. Use a Java-mode ast-grep pattern
+      to ensure only real call sites are matched, not string literals or
+      comments. Record the files changed and total rewrite count.
+    required_tool: ast-grep
+    allowed_tools: [ast-grep]
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, rewrite_count]
+    artifact_requirements: [step_trace]
+  - step_id: verify
+    name: verify
+    objective: >
+      Confirm that `forceTerminateAllRepairSessions` no longer appears as a
+      method call in any Java file under `src/` after the ast-grep rewrite.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [remaining_occurrences, verification_passed]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the compressed failure
+      summary, the files changed by ast-grep, the total rewrite count, and
+      the verification result.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [failure_summary, files_changed, rewrite_count, verification_passed]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: false
+tool_variant_policy:
+  enforce_tool_under_test: false
+appendix_note: >
+  This task is Track B appendix material. It demonstrates tool composition
+  (rtk compression to surface an actionable error, followed by ast-grep
+  syntax-aware fix) in a realistic Cassandra workflow. It is not official
+  scorecard material and must not be used as the basis for single-tool
+  attribution claims.

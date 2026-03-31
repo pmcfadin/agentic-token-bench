@@ -1,0 +1,114 @@
+task_id: cassandra-appendix-discovery-and-edit
+title: Discover deprecated logger call sites with ripgrep, then rewrite them with fastmod
+track: appendix
+family: appendix
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Use ripgrep to locate all Java source files that call the deprecated
+  `logger.debug(String.format(...))` pattern, then use fastmod to rewrite
+  each call to the preferred lazy-interpolation form `logger.debug("{}",
+  ...)`. Demonstrates a discovery-then-transformation workflow using two
+  complementary tools.
+task_description: >
+  Apache Cassandra's codebase contains many logging call sites that use
+  `String.format(...)` inside `logger.debug(...)` or `logger.trace(...)`.
+  These eager format calls allocate a string even when the log level is
+  disabled, which wastes CPU and allocations. The preferred pattern is
+  `logger.debug("{}", value)` because SLF4J defers formatting until the
+  message is actually emitted.
+
+  This is a two-phase workflow:
+
+  (1) Discovery phase — use ripgrep to find all Java files under `src/` that
+  contain the pattern `logger.debug(String.format(` or
+  `logger.trace(String.format(`. Collect the file list and total match count.
+
+  (2) Transformation phase — use fastmod to replace
+  `logger.debug(String.format(` with `logger.debug(` and
+  `logger.trace(String.format(` with `logger.trace(` across the discovered
+  files. This is an intentionally conservative first-pass replacement; the
+  goal is to measure how many call sites can be reached with a simple text
+  substitution before any syntax-aware tool is needed.
+
+  (3) Verify that the number of changed files matches the discovery count.
+
+  Do not touch files outside `src/`. Produce a structured answer with the
+  discovery count, the files changed, and the post-edit match count.
+success_criteria:
+  - ripgrep was used in the discovery step
+  - fastmod was used in the transformation step
+  - files_changed in the answer matches the discovery file count
+  - post-edit ripgrep scan shows zero remaining occurrences of the targeted pattern
+  - No files outside `src/` were modified
+validation_commands:
+  - "python scripts/validate_cassandra_appendix_discovery_and_edit.py --task cassandra-appendix-discovery-and-edit"
+human_review_triggers:
+  - "discovery count is zero"
+  - "post-edit match count is non-zero"
+  - "files changed count differs from discovery count by more than 10%"
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Use ripgrep to search all Java files under `src/` for the patterns
+      `logger.debug(String.format(` and `logger.trace(String.format(`.
+      Collect the list of matching files and the total occurrence count.
+      Do not modify any files in this step.
+    required_tool: ripgrep
+    allowed_tools: [ripgrep]
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [matching_files, occurrence_count]
+    artifact_requirements: [step_trace]
+  - step_id: edit
+    name: edit
+    objective: >
+      Use fastmod to replace `logger.debug(String.format(` with
+      `logger.debug(` and `logger.trace(String.format(` with
+      `logger.trace(` across all Java files under `src/`. Apply both
+      substitutions in sequence. Record the files changed and total
+      replacement count for each substitution.
+    required_tool: fastmod
+    allowed_tools: [fastmod]
+    blocked_tools: [ripgrep, qmd, rtk, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, replacement_count]
+    artifact_requirements: [step_trace]
+  - step_id: verify
+    name: verify
+    objective: >
+      Re-run a search to confirm that no occurrences of
+      `logger.debug(String.format(` or `logger.trace(String.format(`
+      remain in any Java file under `src/` after the fastmod pass.
+    required_tool: ripgrep
+    allowed_tools: [ripgrep]
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [remaining_occurrences, verification_passed]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the discovery count, the
+      list of files changed, the replacement count, and the verification
+      result.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [discovery_count, files_changed, replacement_count, verification_passed]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: false
+tool_variant_policy:
+  enforce_tool_under_test: false
+appendix_note: >
+  This task is Track B appendix material. It demonstrates tool composition
+  (ripgrep discovery followed by fastmod transformation) in a realistic
+  Cassandra workflow. It is not official scorecard material and must not be
+  used as the basis for single-tool attribution claims.

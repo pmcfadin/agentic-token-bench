@@ -1,0 +1,137 @@
+task_id: cassandra-appendix-context-then-rename
+title: Retrieve config key documentation with qmd, then rename the key with fastmod
+track: appendix
+family: appendix
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Use qmd to retrieve the documentation passage that defines the
+  `concurrent_reads` configuration key and its recommended replacement, then
+  use fastmod to rename all occurrences of the old key to the new name across
+  YAML configuration files and Java source files. Demonstrates a
+  retrieval-guided text migration workflow.
+task_description: >
+  Apache Cassandra's `cassandra.yaml` and related configuration files contain
+  a configuration key `concurrent_reads` that was scheduled for renaming to
+  `concurrent_reads_per_core` in a tuning refactor. The change affects both
+  the YAML configuration files and the Java source files that reference the
+  key by its string literal name.
+
+  This is a two-phase workflow:
+
+  (1) Retrieval phase — use qmd to retrieve the passage from
+  `doc/source/configuration/cass_yaml_file.rst` (or the nearest equivalent
+  configuration reference document) that describes `concurrent_reads` and
+  documents its replacement name. Extract the old key name, the new key name,
+  and the file scope from the retrieved passage. Do not read the file
+  directly; use qmd.
+
+  (2) Rename phase — use fastmod to replace all occurrences of the string
+  `concurrent_reads` with `concurrent_reads_per_core` across:
+    - all `.yaml` and `.yml` files under `conf/` and `test/`
+    - all `.java` files under `src/` that reference the key as a string
+      literal (e.g., in `DatabaseDescriptor` or similar configuration classes)
+
+  Apply the replacement as two separate fastmod invocations: one for YAML
+  files and one for Java files. Record the files changed and occurrence count
+  for each invocation.
+
+  (3) Confirm that no occurrences of the bare string `concurrent_reads`
+  (without the `_per_core` suffix) remain in the targeted file types after
+  the rename.
+
+  Produce a structured answer with the retrieved key mapping, the files
+  changed per file type, the total replacement count, and the post-rename
+  residual count.
+success_criteria:
+  - qmd was used to retrieve the documentation passage
+  - The retrieved passage identifies the old key name and the replacement name
+  - fastmod was used for the YAML rename pass
+  - fastmod was used for the Java rename pass
+  - No occurrences of `concurrent_reads` (without `_per_core`) remain in targeted files after the rename
+  - Files changed are reported separately for YAML and Java passes
+validation_commands:
+  - "python scripts/validate_cassandra_appendix_context_then_rename.py --task cassandra-appendix-context-then-rename"
+human_review_triggers:
+  - "qmd retrieval returns no passage or does not identify the replacement key name"
+  - "fastmod replacement count is zero for either pass"
+  - "bare `concurrent_reads` string still present in any targeted file after the rename"
+steps:
+  - step_id: retrieve
+    name: retrieve
+    objective: >
+      Use qmd to retrieve the documentation passage in the Cassandra
+      configuration reference that describes `concurrent_reads` and its
+      planned replacement name. Extract the old key name, the new key name,
+      and the relevant file scope hint from the passage. Do not open the
+      documentation file directly.
+    required_tool: qmd
+    allowed_tools: [qmd]
+    blocked_tools: [ripgrep, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [old_key, new_key, scope_hint, source_passage]
+    artifact_requirements: [step_trace]
+  - step_id: rename_yaml
+    name: rename_yaml
+    objective: >
+      Use fastmod to replace all occurrences of `concurrent_reads` with
+      `concurrent_reads_per_core` in all `.yaml` and `.yml` files under
+      `conf/` and `test/`. Record the files changed and the replacement
+      count for the YAML pass.
+    required_tool: fastmod
+    allowed_tools: [fastmod]
+    blocked_tools: [ripgrep, qmd, rtk, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [yaml_files_changed, yaml_replacement_count]
+    artifact_requirements: [step_trace]
+  - step_id: rename_java
+    name: rename_java
+    objective: >
+      Use fastmod to replace all occurrences of `concurrent_reads` with
+      `concurrent_reads_per_core` in all `.java` files under `src/`. Record
+      the files changed and the replacement count for the Java pass.
+    required_tool: fastmod
+    allowed_tools: [fastmod]
+    blocked_tools: [ripgrep, qmd, rtk, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [java_files_changed, java_replacement_count]
+    artifact_requirements: [step_trace]
+  - step_id: verify
+    name: verify
+    objective: >
+      Confirm that the bare string `concurrent_reads` (without the
+      `_per_core` suffix) no longer appears in any `.yaml`, `.yml`, or
+      `.java` file in the targeted directories after both fastmod passes.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [remaining_occurrences, verification_passed]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the retrieved key mapping,
+      the YAML files changed and replacement count, the Java files changed
+      and replacement count, and the verification result.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [key_mapping, yaml_files_changed, yaml_replacement_count, java_files_changed, java_replacement_count, verification_passed]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: false
+tool_variant_policy:
+  enforce_tool_under_test: false
+appendix_note: >
+  This task is Track B appendix material. It demonstrates tool composition
+  (qmd documentation retrieval to confirm the correct key rename, followed by
+  two fastmod passes across different file types) in a realistic Cassandra
+  configuration migration workflow. It is not official scorecard material and
+  must not be used as the basis for single-tool attribution claims.

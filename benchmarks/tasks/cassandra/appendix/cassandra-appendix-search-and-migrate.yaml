@@ -1,0 +1,114 @@
+task_id: cassandra-appendix-search-and-migrate
+title: Locate a deprecated API pattern with ripgrep, then migrate call sites with ast-grep
+track: appendix
+family: appendix
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Use ripgrep to locate all Java source files that call the deprecated
+  `FBUtilities.getBroadcastAddress()` method, then use ast-grep to rewrite
+  each call site to the replacement `FBUtilities.getJustBroadcastAddress()`.
+  Demonstrates a text-search discovery combined with a syntax-aware migration.
+task_description: >
+  Apache Cassandra introduced `FBUtilities.getJustBroadcastAddress()` as the
+  replacement for the deprecated `FBUtilities.getBroadcastAddress()` during a
+  networking refactoring pass. The old method signature returned an
+  `InetAddress`, while the new method returns the same type but enforces that
+  only the broadcast IP is used (not the listen address). The call site
+  surface is wide across the `src/` tree.
+
+  This is a two-phase workflow:
+
+  (1) Discovery phase — use ripgrep to find all Java files under `src/` that
+  contain the string `FBUtilities.getBroadcastAddress()`. Record the file
+  list and total occurrence count. This gives a precise scope before any
+  edits are made.
+
+  (2) Migration phase — use ast-grep with a Java pattern to rewrite each
+  `FBUtilities.getBroadcastAddress()` call site to
+  `FBUtilities.getJustBroadcastAddress()`. Using ast-grep (rather than plain
+  text replacement) ensures that only syntactic call expressions are matched,
+  not occurrences inside string literals, comments, or import statements.
+
+  (3) Confirm that no `FBUtilities.getBroadcastAddress()` call expressions
+  remain after the migration.
+
+  Produce a structured answer with the discovery count, the files changed by
+  ast-grep, the total rewrite count, and the post-migration match count.
+success_criteria:
+  - ripgrep was used in the discovery step
+  - ast-grep was used in the migration step
+  - ast-grep rewrite count is greater than zero
+  - No `FBUtilities.getBroadcastAddress()` call expressions remain after the migration
+  - files_changed in the answer matches or is a subset of the discovery file list
+validation_commands:
+  - "python scripts/validate_cassandra_appendix_search_and_migrate.py --task cassandra-appendix-search-and-migrate"
+human_review_triggers:
+  - "discovery count is zero"
+  - "ast-grep rewrite count is zero"
+  - "old call expression still present in any Java file after the migration"
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Use ripgrep to search all Java files under `src/` for the literal
+      string `FBUtilities.getBroadcastAddress()`. Record the matching file
+      list and the total occurrence count. Do not modify any files in this
+      step.
+    required_tool: ripgrep
+    allowed_tools: [ripgrep]
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [matching_files, occurrence_count]
+    artifact_requirements: [step_trace]
+  - step_id: migrate
+    name: migrate
+    objective: >
+      Use ast-grep with Java mode to locate all call expression nodes
+      matching `FBUtilities.getBroadcastAddress()` under `src/` and rewrite
+      them to `FBUtilities.getJustBroadcastAddress()`. Restrict matches to
+      call expressions so that comments and string literals are not touched.
+      Record the files changed and total rewrite count.
+    required_tool: ast-grep
+    allowed_tools: [ast-grep]
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, rewrite_count]
+    artifact_requirements: [step_trace]
+  - step_id: verify
+    name: verify
+    objective: >
+      Confirm that `FBUtilities.getBroadcastAddress()` no longer appears as
+      a call expression in any Java file under `src/` after the ast-grep
+      migration pass.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [remaining_occurrences, verification_passed]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the discovery count, the
+      list of files changed, the rewrite count, and the verification result.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [discovery_count, files_changed, rewrite_count, verification_passed]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: false
+tool_variant_policy:
+  enforce_tool_under_test: false
+appendix_note: >
+  This task is Track B appendix material. It demonstrates tool composition
+  (ripgrep text search for discovery scope, followed by ast-grep syntax-aware
+  call-site migration) in a realistic Cassandra workflow. It is not official
+  scorecard material and must not be used as the basis for single-tool
+  attribution claims.
