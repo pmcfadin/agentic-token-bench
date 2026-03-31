@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
-import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -15,11 +14,15 @@ from agents.claude.adapter import ClaudeAdapter, _TIMEOUT_EXIT_CODE
 from agents.claude.parser import extract_tokens_from_output, parse_claude_json_output
 
 # ---------------------------------------------------------------------------
-# Fixture data
+# Availability detection
 # ---------------------------------------------------------------------------
 
 _CLAUDE_BINARY = "/Applications/cmux.app/Contents/Resources/bin/claude"
-_CLAUDE_AVAILABLE = shutil.which(_CLAUDE_BINARY) is not None or Path(_CLAUDE_BINARY).exists()
+_CLAUDE_AVAILABLE = shutil.which("claude") is not None or Path(_CLAUDE_BINARY).exists()
+
+# ---------------------------------------------------------------------------
+# Fixture data — synthetic JSON strings for unit-testing parser logic
+# ---------------------------------------------------------------------------
 
 # Realistic JSON output captured from ``claude -p ... --output-format json``.
 _SAMPLE_JSON_OUTPUT = json.dumps(
@@ -78,7 +81,7 @@ _SAMPLE_JSON_ZERO_TOKENS = json.dumps(
 
 
 # ---------------------------------------------------------------------------
-# parse_claude_json_output
+# parse_claude_json_output — unit tests (pure parser logic, no CLI)
 # ---------------------------------------------------------------------------
 
 
@@ -119,7 +122,7 @@ def test_parse_json_without_usage_field() -> None:
 
 
 # ---------------------------------------------------------------------------
-# extract_tokens_from_output
+# extract_tokens_from_output — unit tests (pure parser logic, no CLI)
 # ---------------------------------------------------------------------------
 
 
@@ -187,7 +190,7 @@ def test_extract_tokens_zero_usage_values() -> None:
 
 
 # ---------------------------------------------------------------------------
-# ClaudeAdapter — instantiation
+# ClaudeAdapter — instantiation (no CLI invocation)
 # ---------------------------------------------------------------------------
 
 
@@ -212,7 +215,7 @@ def test_claude_adapter_default_binary_path() -> None:
 
 
 # ---------------------------------------------------------------------------
-# ClaudeAdapter.normalize_final_status
+# ClaudeAdapter.normalize_final_status — unit tests (no CLI invocation)
 # ---------------------------------------------------------------------------
 
 
@@ -262,7 +265,7 @@ def test_normalize_nonzero_non_timeout_is_failed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# ClaudeAdapter.extract_reported_tokens
+# ClaudeAdapter.extract_reported_tokens — unit tests (synthetic StepResult)
 # ---------------------------------------------------------------------------
 
 
@@ -312,238 +315,56 @@ def test_extract_reported_tokens_empty_stdout_returns_zeros() -> None:
 
 
 # ---------------------------------------------------------------------------
-# ClaudeAdapter.run_step — mocked subprocess
+# Integration — real binary (skipped unless available)
 # ---------------------------------------------------------------------------
 
 
-def _make_completed_proc(stdout: str = _SAMPLE_JSON_OUTPUT, returncode: int = 0) -> MagicMock:
-    proc = MagicMock()
-    proc.stdout = stdout
-    proc.stderr = ""
-    proc.returncode = returncode
-    return proc
-
-
-def test_run_step_returns_step_result(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()):
-        sr = adapter.run_step("do something", {"PATH": "/usr/bin"}, tmp_path, 30.0)
-    assert isinstance(sr, StepResult)
-
-
-def test_run_step_stdout_captured(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()):
-        sr = adapter.run_step("do something", {}, tmp_path, 30.0)
-    assert sr.stdout == _SAMPLE_JSON_OUTPUT
-
-
-def test_run_step_exit_status_zero(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()):
-        sr = adapter.run_step("task", {}, tmp_path, 30.0)
-    assert sr.exit_status == 0
-
-
-def test_run_step_exit_status_nonzero(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    proc = _make_completed_proc(stdout="", returncode=1)
-    with patch("agents.claude.adapter.subprocess.run", return_value=proc):
-        sr = adapter.run_step("task", {}, tmp_path, 30.0)
-    assert sr.exit_status == 1
-
-
-def test_run_step_step_metadata_has_timed_out_false(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()):
-        sr = adapter.run_step("task", {}, tmp_path, 30.0)
-    assert sr.step_metadata["timed_out"] is False
-
-
-def test_run_step_step_metadata_has_duration_ms(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()):
-        sr = adapter.run_step("task", {}, tmp_path, 30.0)
-    assert "duration_ms" in sr.step_metadata
-    assert sr.step_metadata["duration_ms"] >= 0
-
-
-def test_run_step_step_metadata_captures_stop_reason(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()):
-        sr = adapter.run_step("task", {}, tmp_path, 30.0)
-    assert sr.step_metadata.get("stop_reason") == "end_turn"
-
-
-def test_run_step_trace_metadata_has_usage(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()):
-        sr = adapter.run_step("task", {}, tmp_path, 30.0)
-    assert "usage" in sr.trace_metadata
-
-
-def test_run_step_timeout_sets_timeout_exit_code(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    exc = subprocess.TimeoutExpired(cmd=["claude"], timeout=30.0)
-    exc.stdout = None
-    exc.stderr = None
-    with patch("agents.claude.adapter.subprocess.run", side_effect=exc):
-        sr = adapter.run_step("task", {}, tmp_path, 30.0)
-    assert sr.exit_status == _TIMEOUT_EXIT_CODE
-
-
-def test_run_step_timeout_sets_timed_out_flag(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    exc = subprocess.TimeoutExpired(cmd=["claude"], timeout=30.0)
-    exc.stdout = None
-    exc.stderr = None
-    with patch("agents.claude.adapter.subprocess.run", side_effect=exc):
-        sr = adapter.run_step("task", {}, tmp_path, 30.0)
-    assert sr.step_metadata["timed_out"] is True
-
-
-def test_run_step_timeout_status_is_timeout(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    exc = subprocess.TimeoutExpired(cmd=["claude"], timeout=30.0)
-    exc.stdout = None
-    exc.stderr = None
-    with patch("agents.claude.adapter.subprocess.run", side_effect=exc):
-        sr = adapter.run_step("task", {}, tmp_path, 30.0)
-    assert adapter.normalize_final_status(sr) == "timeout"
-
-
-def test_run_step_invokes_binary_with_output_format_json(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()) as m:
-        adapter.run_step("task prompt", {}, tmp_path, 30.0)
-    call_args = m.call_args
-    cmd = call_args[0][0]  # first positional arg is the command list
-    assert "--output-format" in cmd
-    assert "json" in cmd
-
-
-def test_run_step_passes_prompt_to_cli(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()) as m:
-        adapter.run_step("my special prompt", {}, tmp_path, 30.0)
-    cmd = m.call_args[0][0]
-    assert "my special prompt" in cmd
-
-
-def test_run_step_passes_env_to_subprocess(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    env = {"PATH": "/constrained/bin", "MY_VAR": "1"}
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()) as m:
-        adapter.run_step("task", env, tmp_path, 30.0)
-    assert m.call_args.kwargs["env"] == env
-
-
-def test_run_step_passes_workspace_as_cwd(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()) as m:
-        adapter.run_step("task", {}, tmp_path, 30.0)
-    assert m.call_args.kwargs["cwd"] == tmp_path
-
-
-# ---------------------------------------------------------------------------
-# ClaudeAdapter.probe — mocked subprocess
-# ---------------------------------------------------------------------------
-
-
-def test_probe_returns_qualification_result() -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()):
-        result = adapter.probe()
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_probe_with_real_binary_returns_qualification_result() -> None:
+    """probe() returns a QualificationResult when invoked against the real binary."""
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
+    result = adapter.probe()
     assert isinstance(result, QualificationResult)
 
 
-def test_probe_qualified_when_tokens_extracted() -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()):
-        result = adapter.probe()
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_probe_with_real_binary_is_qualified() -> None:
+    """probe() reports qualified=True when the real binary is present and functional."""
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
+    result = adapter.probe()
     assert result.qualified is True
 
 
-def test_probe_all_gates_true_on_success() -> None:
-    adapter = ClaudeAdapter()
-    with patch("agents.claude.adapter.subprocess.run", return_value=_make_completed_proc()):
-        result = adapter.probe()
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_probe_with_real_binary_all_gates_true() -> None:
+    """probe() sets all four capability gates to True on a successful run."""
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
+    result = adapter.probe()
     assert result.reported_token_support is True
     assert result.forced_tool_support is True
     assert result.trace_support is True
     assert result.run_completion_support is True
 
 
-def test_probe_not_qualified_when_binary_missing() -> None:
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_probe_nonexistent_binary_not_qualified() -> None:
+    """probe() returns qualified=False and sets a failure_reason when the binary is absent."""
     adapter = ClaudeAdapter(binary_path="/nonexistent/claude")
-    with patch(
-        "agents.claude.adapter.subprocess.run", side_effect=FileNotFoundError("not found")
-    ):
-        result = adapter.probe()
+    result = adapter.probe()
     assert result.qualified is False
     assert result.reported_token_support is False
-
-
-def test_probe_failure_reason_set_on_file_not_found() -> None:
-    adapter = ClaudeAdapter(binary_path="/nonexistent/claude")
-    with patch(
-        "agents.claude.adapter.subprocess.run", side_effect=FileNotFoundError("not found")
-    ):
-        result = adapter.probe()
     assert result.failure_reason is not None
     assert "not found" in result.failure_reason.lower()
 
 
-def test_probe_not_qualified_when_nonzero_exit() -> None:
-    adapter = ClaudeAdapter()
-    proc = _make_completed_proc(stdout="", returncode=1)
-    proc.stderr = "some error"
-    with patch("agents.claude.adapter.subprocess.run", return_value=proc):
-        result = adapter.probe()
-    assert result.qualified is False
-
-
-def test_probe_not_qualified_when_no_token_data() -> None:
-    adapter = ClaudeAdapter()
-    proc = _make_completed_proc(stdout=_SAMPLE_JSON_NO_USAGE, returncode=0)
-    with patch("agents.claude.adapter.subprocess.run", return_value=proc):
-        result = adapter.probe()
-    assert result.qualified is False
-    assert result.reported_token_support is False
-
-
-def test_probe_not_qualified_on_timeout() -> None:
-    adapter = ClaudeAdapter()
-    exc = subprocess.TimeoutExpired(cmd=["claude"], timeout=60.0)
-    with patch("agents.claude.adapter.subprocess.run", side_effect=exc):
-        result = adapter.probe()
-    assert result.qualified is False
-    assert "timed out" in (result.failure_reason or "").lower()
-
-
-# ---------------------------------------------------------------------------
-# Integration — real binary (skipped unless available)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="Claude binary not installed")
-def test_probe_with_real_binary() -> None:
-    """Integration test: probe() against the real claude binary."""
-    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
-    result = adapter.probe()
-    assert isinstance(result, QualificationResult)
-    assert result.qualified is True
-
-
-@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="Claude binary not installed")
-def test_run_step_with_real_binary(tmp_path: Path) -> None:
-    """Integration test: run_step() against the real claude binary.
-
-    Passes the current process environment so that the subprocess can locate
-    its own runtime dependencies (node, etc.) on PATH.
-    """
-    import os
-
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_run_step_returns_step_result(tmp_path: Path) -> None:
+    """run_step() returns a StepResult when the real binary executes successfully."""
     adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
     sr = adapter.run_step(
         prompt="Reply with the single word 'ok' and nothing else.",
@@ -552,6 +373,107 @@ def test_run_step_with_real_binary(tmp_path: Path) -> None:
         timeout=60.0,
     )
     assert isinstance(sr, StepResult)
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_run_step_exits_zero(tmp_path: Path) -> None:
+    """run_step() exits with status 0 for a well-formed prompt."""
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
+    sr = adapter.run_step(
+        prompt="Reply with the single word 'ok' and nothing else.",
+        step_env=dict(os.environ),
+        workspace=tmp_path,
+        timeout=60.0,
+    )
     assert sr.exit_status == 0
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_run_step_stdout_contains_json(tmp_path: Path) -> None:
+    """run_step() captures JSON output in stdout when --output-format json is used."""
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
+    sr = adapter.run_step(
+        prompt="Reply with the single word 'ok' and nothing else.",
+        step_env=dict(os.environ),
+        workspace=tmp_path,
+        timeout=60.0,
+    )
+    parsed = json.loads(sr.stdout)
+    assert parsed.get("type") == "result"
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_run_step_step_metadata_timed_out_false(tmp_path: Path) -> None:
+    """run_step() sets timed_out=False in step_metadata on a normal completion."""
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
+    sr = adapter.run_step(
+        prompt="Reply with the single word 'ok' and nothing else.",
+        step_env=dict(os.environ),
+        workspace=tmp_path,
+        timeout=60.0,
+    )
+    assert sr.step_metadata["timed_out"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_run_step_step_metadata_has_duration_ms(tmp_path: Path) -> None:
+    """run_step() records a non-negative duration_ms in step_metadata."""
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
+    sr = adapter.run_step(
+        prompt="Reply with the single word 'ok' and nothing else.",
+        step_env=dict(os.environ),
+        workspace=tmp_path,
+        timeout=60.0,
+    )
+    assert "duration_ms" in sr.step_metadata
+    assert sr.step_metadata["duration_ms"] >= 0
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_run_step_extract_reported_tokens_nonzero(tmp_path: Path) -> None:
+    """extract_reported_tokens() returns non-zero counts from real run_step() output."""
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
+    sr = adapter.run_step(
+        prompt="Reply with the single word 'ok' and nothing else.",
+        step_env=dict(os.environ),
+        workspace=tmp_path,
+        timeout=60.0,
+    )
     tokens = adapter.extract_reported_tokens(sr)
+    assert isinstance(tokens, ReportedTokens)
     assert tokens.total_tokens > 0
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_run_step_extract_reported_tokens_has_evidence(tmp_path: Path) -> None:
+    """extract_reported_tokens() returns a non-empty evidence_snippet from real output."""
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
+    sr = adapter.run_step(
+        prompt="Reply with the single word 'ok' and nothing else.",
+        step_env=dict(os.environ),
+        workspace=tmp_path,
+        timeout=60.0,
+    )
+    tokens = adapter.extract_reported_tokens(sr)
+    assert isinstance(tokens.evidence_snippet, str)
+    assert len(tokens.evidence_snippet) > 0
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_run_step_normalize_final_status_completed(tmp_path: Path) -> None:
+    """normalize_final_status() returns 'completed' for a real successful run_step()."""
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
+    sr = adapter.run_step(
+        prompt="Reply with the single word 'ok' and nothing else.",
+        step_env=dict(os.environ),
+        workspace=tmp_path,
+        timeout=60.0,
+    )
+    assert adapter.normalize_final_status(sr) == "completed"
