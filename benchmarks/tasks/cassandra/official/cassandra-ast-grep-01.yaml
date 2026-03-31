@@ -1,0 +1,96 @@
+task_id: cassandra-ast-grep-01
+title: Rewrite call sites to use new StorageProxy method signature
+family: ast-grep
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Use ast-grep to find and rewrite all call sites of the deprecated
+  `StorageProxy.mutate(mutations, consistency_level)` two-argument form to the
+  new three-argument form that adds an explicit `queryStartNanoTime` parameter.
+task_description: >
+  The `StorageProxy.mutate` method in Apache Cassandra gained a third parameter
+  `queryStartNanoTime` during an API update. All existing call sites that use
+  the two-argument form must be updated to pass `System.nanoTime()` as the
+  third argument.
+
+  This is a syntax-aware call-site rewrite. A plain text replacement would
+  incorrectly match similar method names or multi-line calls. ast-grep can
+  match the structural call pattern and insert the new argument reliably.
+
+  Your task is to:
+
+  (1) Use ast-grep to locate all Java call sites of the form
+  `StorageProxy.mutate($MUTATIONS, $CL)` across the repository.
+
+  (2) Rewrite each call site to `StorageProxy.mutate($MUTATIONS, $CL,
+  System.nanoTime())`.
+
+  (3) Confirm how many call sites were updated.
+
+  Do not manually edit files. Produce a structured answer with the list of
+  files changed and the number of call sites rewritten.
+success_criteria:
+  - ast-grep was used to perform the rewrite
+  - All two-argument call sites are updated to three-argument form
+  - No two-argument call sites remain after the rewrite
+  - Files changed list is provided in the answer
+validation_commands:
+  - "python scripts/validate_cassandra_ast_grep_01.py --task cassandra-ast-grep-01"
+human_review_triggers:
+  - "rewrite count is zero"
+  - "two-argument call sites remain in any Java file after the run"
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Use ast-grep to locate all Java call sites matching
+      `StorageProxy.mutate($MUTATIONS, $CL)` in the repository. Record the
+      matching file paths and the number of matches before making any changes.
+    required_tool: ast-grep
+    allowed_tools: [ast-grep]
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [candidate_files, match_count]
+    artifact_requirements: [step_trace]
+  - step_id: edit
+    name: edit
+    objective: >
+      Use ast-grep to rewrite all matched call sites by adding
+      `System.nanoTime()` as the third argument. Record the files modified and
+      the total rewrite count.
+    required_tool: ast-grep
+    allowed_tools: [ast-grep]
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, rewrite_count]
+    artifact_requirements: [step_trace]
+  - step_id: validate
+    name: validate
+    objective: >
+      Confirm that no two-argument `StorageProxy.mutate` call sites remain in
+      any Java file after the rewrite.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [remaining_two_arg_calls, validation_passed]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the list of files changed, the
+      total rewrite count, and the validation result.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, rewrite_count, validation_passed]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

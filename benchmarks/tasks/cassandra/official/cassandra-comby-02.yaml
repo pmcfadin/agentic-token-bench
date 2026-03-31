@@ -1,0 +1,104 @@
+task_id: cassandra-comby-02
+title: Wrap bare logger.debug calls with isDebugEnabled guard across Java source
+family: comby
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Use comby to find all bare `logger.debug(...)` call sites that are not
+  already wrapped in an `if (logger.isDebugEnabled())` guard and wrap them
+  across Java source files under `src/`.
+task_description: >
+  Apache Cassandra uses SLF4J for logging. A recurring code review finding is
+  that `logger.debug(...)` calls with string concatenation or method-call
+  arguments are not wrapped in `if (logger.isDebugEnabled())` guards, causing
+  unnecessary string construction even when debug logging is off.
+
+  This is a repeated code pattern adjustment where comby templates fit well.
+  The pattern is structural: match a bare `logger.debug(:[args])` statement
+  that is not already inside an `isDebugEnabled` guard and wrap it with:
+
+  ```java
+  if (logger.isDebugEnabled()) {
+      logger.debug(:[args]);
+  }
+  ```
+
+  comby's structural rewrite avoids the false matches that a plain regex would
+  produce on multi-line arguments or nested calls.
+
+  Your task is to:
+
+  (1) Use comby to locate all bare `logger.debug(...)` call sites in Java
+  files under `src/` that are not already guarded.
+
+  (2) Rewrite each matched call site with the `isDebugEnabled` wrapper.
+
+  (3) Confirm how many call sites were wrapped.
+
+  Do not manually edit files. Produce a structured answer with the list of
+  files changed and the number of call sites wrapped.
+success_criteria:
+  - comby was used to perform the rewrite
+  - Matched bare logger.debug calls are wrapped with isDebugEnabled guard
+  - Files changed list is provided in the answer
+  - Rewrite count is greater than zero
+validation_commands:
+  - "python scripts/validate_cassandra_comby_02.py --task cassandra-comby-02"
+human_review_triggers:
+  - "rewrite count is zero"
+  - "wrapped calls have malformed guard syntax"
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Use comby to locate all bare `logger.debug(...)` call sites in Java
+      files under `src/` that are candidates for wrapping. Record the file
+      paths and match count before making changes.
+    required_tool: comby
+    allowed_tools: [comby]
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep]
+    completion_contract:
+      kind: structured_answer
+      fields: [candidate_files, match_count]
+    artifact_requirements: [step_trace]
+  - step_id: edit
+    name: edit
+    objective: >
+      Use comby to rewrite all matched bare `logger.debug(...)` call sites by
+      wrapping them in `if (logger.isDebugEnabled()) { ... }`. Record the
+      files modified and the total rewrite count.
+    required_tool: comby
+    allowed_tools: [comby]
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, rewrite_count]
+    artifact_requirements: [step_trace]
+  - step_id: validate
+    name: validate
+    objective: >
+      Confirm that the rewritten call sites have correct `isDebugEnabled` guard
+      syntax and that no malformed rewrites are present.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [malformed_rewrites, validation_passed]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the list of files changed, the
+      total rewrite count, and the validation result.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, rewrite_count, validation_passed]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

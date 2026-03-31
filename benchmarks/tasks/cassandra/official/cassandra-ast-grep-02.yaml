@@ -1,0 +1,96 @@
+task_id: cassandra-ast-grep-02
+title: Migrate deprecated FBUtilities.getBroadcastAddress to getBroadcastAddressAndPort
+family: ast-grep
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Use ast-grep to find and replace all usages of the deprecated
+  `FBUtilities.getBroadcastAddress()` method with the replacement
+  `FBUtilities.getBroadcastAddressAndPort()` across all Java source files.
+task_description: >
+  Apache Cassandra introduced `FBUtilities.getBroadcastAddressAndPort()` as a
+  replacement for the deprecated `FBUtilities.getBroadcastAddress()`. Callers
+  that use the old method must be migrated to the new one.
+
+  This is a structured API migration. The method name change is mechanical but
+  requires AST-level accuracy to avoid matching similar identifiers in comments
+  or unrelated contexts. ast-grep's Java pattern matching handles this reliably
+  where text replacement might misfire.
+
+  Your task is to:
+
+  (1) Use ast-grep to locate all call sites of
+  `FBUtilities.getBroadcastAddress()` in Java files under the `src/` directory.
+
+  (2) Rewrite each call site to `FBUtilities.getBroadcastAddressAndPort()`.
+
+  (3) Confirm how many call sites were migrated.
+
+  Do not manually edit files. Produce a structured answer with the list of
+  files changed and the number of call sites migrated.
+success_criteria:
+  - ast-grep was used to perform the migration
+  - All call sites of the deprecated method are replaced with the new method
+  - No call sites of the deprecated method remain after the run
+  - Files changed list is provided in the answer
+validation_commands:
+  - "python scripts/validate_cassandra_ast_grep_02.py --task cassandra-ast-grep-02"
+human_review_triggers:
+  - "migration count is zero"
+  - "deprecated method call remains in any Java file after the run"
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Use ast-grep to locate all Java call sites of
+      `FBUtilities.getBroadcastAddress()` under `src/`. Record the matching
+      file paths and match count before making changes.
+    required_tool: ast-grep
+    allowed_tools: [ast-grep]
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [candidate_files, match_count]
+    artifact_requirements: [step_trace]
+  - step_id: edit
+    name: edit
+    objective: >
+      Use ast-grep to rewrite all matched call sites from
+      `FBUtilities.getBroadcastAddress()` to
+      `FBUtilities.getBroadcastAddressAndPort()`. Record the files modified
+      and the total rewrite count.
+    required_tool: ast-grep
+    allowed_tools: [ast-grep]
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, rewrite_count]
+    artifact_requirements: [step_trace]
+  - step_id: validate
+    name: validate
+    objective: >
+      Confirm that no call sites of `FBUtilities.getBroadcastAddress()` remain
+      in any Java file under `src/` after the migration.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [remaining_deprecated_calls, validation_passed]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the list of files changed, the
+      total migration count, and the validation result.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, rewrite_count, validation_passed]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

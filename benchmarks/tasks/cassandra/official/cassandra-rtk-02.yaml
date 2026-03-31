@@ -1,0 +1,78 @@
+task_id: cassandra-rtk-02
+title: Compress large test output to preserve the error driving the next step
+family: rtk
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Run the Cassandra unit test suite for a targeted package and use rtk to
+  compress the output, preserving only the error that should drive the next
+  repair step.
+task_description: >
+  Cassandra's test suite produces verbose output. When a unit test fails, the
+  raw output includes stack traces, fixture setup logs, and passing test
+  summaries that obscure the root cause. Your task is to:
+
+  (1) Run `ant test -Dtest.name=CompactionManagerTest` in the Cassandra
+  repository root to produce test output.
+
+  (2) Use rtk to compress the raw test output so that noise is removed while
+  the failing test name, the exception type, and the relevant message are
+  preserved.
+
+  (3) Identify the specific exception or assertion failure that should drive
+  the next fix step.
+
+  Do not attempt to fix the failing test. Produce a structured answer with the
+  compressed output, the failing test method name, and the exception or
+  assertion message.
+success_criteria:
+  - rtk was used to compress the test output
+  - Failing test method name is present in the answer
+  - Exception type or assertion message is correctly identified
+  - No source files were modified
+validation_commands:
+  - "python scripts/validate_cassandra_rtk_02.py --task cassandra-rtk-02"
+human_review_triggers:
+  - "compressed output omits the exception message"
+  - "failing test name does not match actual test runner output"
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Run `ant test -Dtest.name=CompactionManagerTest` in the repository root
+      to produce test output. Capture the raw output for the next step.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [raw_output_path]
+    artifact_requirements: [step_trace]
+  - step_id: analyze
+    name: analyze
+    objective: >
+      Use rtk to compress the raw test output. Extract the failing test method
+      name, the exception type, and the assertion or error message.
+    required_tool: rtk
+    allowed_tools: [rtk]
+    blocked_tools: [ripgrep, qmd, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [compressed_output, failing_test, exception_message]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the failing test method name,
+      the exception or assertion message, and the compressed output.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [failing_test, exception_message, compressed_output]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

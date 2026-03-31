@@ -1,0 +1,94 @@
+task_id: cassandra-fastmod-01
+title: Rename a deprecated config key across all Java source files
+family: fastmod
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Use fastmod to replace all occurrences of the deprecated configuration key
+  name `read_repair_chance` with `read_repair` across all Java source files in
+  the repository.
+task_description: >
+  Apache Cassandra renamed a configuration property during a refactoring cycle.
+  The old property name `read_repair_chance` must be replaced with the new name
+  `read_repair` across all Java source files. This is a text-shaped change:
+  the string replacement is exact and does not require understanding the
+  surrounding syntax.
+
+  Your task is to:
+
+  (1) Use fastmod to replace every occurrence of the literal string
+  `read_repair_chance` with `read_repair` in all `.java` files under the
+  `src/` directory.
+
+  (2) Confirm how many files were modified.
+
+  (3) Verify that no occurrences of the old key remain in the affected files
+  after the replacement.
+
+  Do not edit files manually. Produce a structured answer listing the files
+  changed and the total replacement count.
+success_criteria:
+  - fastmod was used to perform the replacement
+  - All occurrences of `read_repair_chance` in Java source files are replaced
+  - No occurrences of the old key remain after the run
+  - Files changed list is provided in the answer
+validation_commands:
+  - "python scripts/validate_cassandra_fastmod_01.py --task cassandra-fastmod-01"
+human_review_triggers:
+  - "replacement count is zero"
+  - "old key string is still present in any Java file after the run"
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Identify how many Java files under `src/` contain the string
+      `read_repair_chance` before making any changes. Record the count and
+      file list.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [candidate_files, occurrence_count]
+    artifact_requirements: [step_trace]
+  - step_id: edit
+    name: edit
+    objective: >
+      Use fastmod to replace all occurrences of `read_repair_chance` with
+      `read_repair` across all `.java` files under `src/`. Record which files
+      were modified and the total replacement count.
+    required_tool: fastmod
+    allowed_tools: [fastmod]
+    blocked_tools: [ripgrep, qmd, rtk, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, replacement_count]
+    artifact_requirements: [step_trace]
+  - step_id: validate
+    name: validate
+    objective: >
+      Confirm that no occurrences of `read_repair_chance` remain in any `.java`
+      file under `src/` after the replacement run.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [remaining_occurrences, validation_passed]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the list of files changed,
+      the total replacement count, and the validation result.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, replacement_count, validation_passed]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

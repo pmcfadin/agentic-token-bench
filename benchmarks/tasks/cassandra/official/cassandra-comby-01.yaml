@@ -1,0 +1,96 @@
+task_id: cassandra-comby-01
+title: Reorder arguments in Tracing.instance.trace call sites across Java source
+family: comby
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Use comby to rewrite all call sites of `Tracing.instance.trace(message,
+  params)` to the new argument order `Tracing.instance.trace(params, message)`
+  across all Java source files in the repository.
+task_description: >
+  An API refactoring in Apache Cassandra reversed the argument order for the
+  `Tracing.instance.trace` method. The old signature was
+  `trace(String message, Object... params)` and the new signature is
+  `trace(Object[] params, String message)`.
+
+  This is a structural rewrite that is awkward for plain text replacement
+  because the arguments are not constant strings — they are arbitrary
+  expressions. comby's structural pattern matching can capture both argument
+  expressions and swap them reliably.
+
+  Your task is to:
+
+  (1) Use comby to locate all Java call sites matching the pattern
+  `Tracing.instance.trace(:[msg], :[params])` across files under `src/`.
+
+  (2) Rewrite each call site to `Tracing.instance.trace(:[params], :[msg])`.
+
+  (3) Confirm how many call sites were rewritten.
+
+  Do not manually edit files. Produce a structured answer with the list of
+  files changed and the number of call sites rewritten.
+success_criteria:
+  - comby was used to perform the rewrite
+  - All matched call sites have their arguments reordered
+  - No call sites with the old argument order remain after the rewrite
+  - Files changed list is provided in the answer
+validation_commands:
+  - "python scripts/validate_cassandra_comby_01.py --task cassandra-comby-01"
+human_review_triggers:
+  - "rewrite count is zero"
+  - "old argument order still present in matched files after the run"
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Use comby to locate all Java call sites of `Tracing.instance.trace`
+      under `src/` that match the two-argument pattern. Record the file paths
+      and match count before making changes.
+    required_tool: comby
+    allowed_tools: [comby]
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep]
+    completion_contract:
+      kind: structured_answer
+      fields: [candidate_files, match_count]
+    artifact_requirements: [step_trace]
+  - step_id: edit
+    name: edit
+    objective: >
+      Use comby to rewrite all matched call sites by swapping the argument
+      order from `(msg, params)` to `(params, msg)`. Record the files
+      modified and the total rewrite count.
+    required_tool: comby
+    allowed_tools: [comby]
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, rewrite_count]
+    artifact_requirements: [step_trace]
+  - step_id: validate
+    name: validate
+    objective: >
+      Confirm that no `Tracing.instance.trace` call sites with the old
+      argument order remain in any Java file under `src/` after the rewrite.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [remaining_old_order_calls, validation_passed]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the list of files changed, the
+      total rewrite count, and the validation result.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, rewrite_count, validation_passed]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

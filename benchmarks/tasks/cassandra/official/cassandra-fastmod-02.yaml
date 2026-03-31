@@ -1,0 +1,97 @@
+task_id: cassandra-fastmod-02
+title: Update legacy property names in cassandra.yaml configuration references
+family: fastmod
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Use fastmod to rename all references to the legacy property
+  `hinted_handoff_throttle_in_kb` to `hinted_handoff_throttle_delay_in_ms`
+  across all YAML and Java files in the repository.
+task_description: >
+  During a Cassandra configuration migration, the property name
+  `hinted_handoff_throttle_in_kb` is being replaced by
+  `hinted_handoff_throttle_delay_in_ms`. This rename must propagate through
+  YAML configuration files and Java source files that reference the property
+  name as a string literal.
+
+  This is a text-shaped migration: no AST understanding is needed. The old
+  string must be replaced with the new string wherever it appears.
+
+  Your task is to:
+
+  (1) Use fastmod to replace all occurrences of
+  `hinted_handoff_throttle_in_kb` with `hinted_handoff_throttle_delay_in_ms`
+  in all `.yaml` and `.java` files under the repository root.
+
+  (2) Confirm how many files were changed.
+
+  (3) Verify that no occurrences of the old property name remain after the
+  replacement.
+
+  Do not edit files manually. Produce a structured answer listing the files
+  changed, the total count of replacements made, and the validation result.
+success_criteria:
+  - fastmod was used to perform the replacement
+  - All occurrences of the old property name are replaced with the new name
+  - No occurrences of the old property name remain after the run
+  - Files changed list is provided in the answer
+validation_commands:
+  - "python scripts/validate_cassandra_fastmod_02.py --task cassandra-fastmod-02"
+human_review_triggers:
+  - "replacement count is zero"
+  - "old property name still present in any file after the run"
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Identify all YAML and Java files that contain the string
+      `hinted_handoff_throttle_in_kb`. Record the file list and occurrence
+      count before making changes.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [candidate_files, occurrence_count]
+    artifact_requirements: [step_trace]
+  - step_id: edit
+    name: edit
+    objective: >
+      Use fastmod to replace all occurrences of `hinted_handoff_throttle_in_kb`
+      with `hinted_handoff_throttle_delay_in_ms` across all `.yaml` and `.java`
+      files. Record the files modified and the total replacement count.
+    required_tool: fastmod
+    allowed_tools: [fastmod]
+    blocked_tools: [ripgrep, qmd, rtk, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, replacement_count]
+    artifact_requirements: [step_trace]
+  - step_id: validate
+    name: validate
+    objective: >
+      Confirm that no occurrences of `hinted_handoff_throttle_in_kb` remain
+      in any `.yaml` or `.java` file after the replacement run.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [remaining_occurrences, validation_passed]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the list of files changed, the
+      total replacement count, and confirmation that validation passed.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [files_changed, replacement_count, validation_passed]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

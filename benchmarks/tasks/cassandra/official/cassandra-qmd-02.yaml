@@ -1,0 +1,66 @@
+task_id: cassandra-qmd-02
+title: Retrieve minimal compaction configuration context for a targeted change
+family: qmd
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+objective: >
+  Retrieve only the minimal source context needed to understand how
+  compaction throughput is configured, in order to support a targeted code
+  change. Do not read unrelated files.
+task_description: >
+  A developer wants to change the default value for the compaction throughput
+  limit in Apache Cassandra. Before making the change, they need to know:
+
+  (1) Which Java source file declares or enforces the compaction throughput
+  configuration parameter.
+
+  (2) The name of the configuration field or constant used in that file.
+
+  (3) The current default value for that parameter.
+
+  Use qmd to retrieve only the relevant passage from the source code. Do not
+  open or read entire files. Produce a structured answer containing the three
+  pieces of information above, the source file path, and the line range of the
+  retrieved passage.
+success_criteria:
+  - Source file path identifies the correct configuration or compaction class
+  - Configuration field name is present in the stated file
+  - Default value is stated and plausible for a throughput-limit parameter
+  - No files were modified
+  - qmd was used to retrieve the passage
+validation_commands:
+  - "python scripts/validate_cassandra_qmd_02.py --task cassandra-qmd-02"
+human_review_triggers:
+  - "source file path does not relate to compaction configuration"
+  - "field name cannot be found in the stated file at the stated line range"
+steps:
+  - step_id: retrieve
+    name: retrieve
+    objective: >
+      Use qmd to retrieve the minimal passage from the Cassandra source that
+      declares or enforces the compaction throughput configuration parameter.
+      Focus on configuration classes or cassandra.yaml property definitions.
+    required_tool: qmd
+    allowed_tools: [qmd]
+    blocked_tools: [ripgrep, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [passage_text, source_path, line_range]
+    artifact_requirements: [step_trace]
+  - step_id: summarize
+    name: summarize
+    objective: >
+      Produce the final structured answer with the source file path, the
+      configuration field name, the default value, and the line range of the
+      retrieved passage.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [source_path, field_name, default_value, line_range]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true
