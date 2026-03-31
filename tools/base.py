@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+import yaml
+
 
 @dataclass
 class ToolManifest:
@@ -46,6 +48,33 @@ class InvocationResult:
     stderr: str
     exit_status: int
     duration_ms: float
+
+
+def load_manifest(path: Path) -> ToolManifest:
+    """Read a manifest.yaml file and return a ToolManifest.
+
+    Args:
+        path: Path to a ``manifest.yaml`` file.
+
+    Returns:
+        A populated :class:`ToolManifest` instance.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+        KeyError: If a required field is missing from the YAML document.
+    """
+    raw = yaml.safe_load(path.read_text())
+    return ToolManifest(
+        id=raw["id"],
+        name=raw["name"],
+        version=raw["version"],
+        category=raw["category"],
+        description=raw["description"],
+        supported_languages=raw.get("supported_languages", []),
+        waste_classes=raw.get("waste_classes", []),
+        dependencies=raw.get("dependencies", []),
+        risk_level=raw.get("risk_level", "low"),
+    )
 
 
 class ToolWrapper(ABC):
