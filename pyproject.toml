@@ -43,7 +43,10 @@ line-length = 99
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["smoke: smoke tests for CI"]
+markers = [
+    "smoke: smoke tests for CI",
+    "integration: tests requiring real agent CLI binaries",
+]
 
 [build-system]
 requires = ["hatchling"]

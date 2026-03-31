@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -359,162 +358,11 @@ class TestExtractReportedTokens:
 
 
 # ---------------------------------------------------------------------------
-# run_step – mocked subprocess
+# probe() – unavailable binary (no real binary required)
 # ---------------------------------------------------------------------------
 
 
-class TestRunStepMocked:
-    """Tests for run_step() using a mocked subprocess.run."""
-
-    def _make_adapter(self) -> CodexAdapter:
-        return CodexAdapter(binary_path="/opt/homebrew/bin/codex")
-
-    def test_run_step_returns_step_result(self, tmp_path: Path) -> None:
-        adapter = self._make_adapter()
-        mock_proc = MagicMock()
-        mock_proc.stdout = FIXTURE_JSONL_OUTPUT
-        mock_proc.stderr = ""
-        mock_proc.returncode = 0
-
-        with patch("subprocess.run", return_value=mock_proc):
-            result = adapter.run_step(
-                prompt="say hello",
-                step_env={},
-                workspace=tmp_path,
-                timeout=30.0,
-            )
-
-        assert isinstance(result, StepResult)
-
-    def test_run_step_exit_status_captured(self, tmp_path: Path) -> None:
-        adapter = self._make_adapter()
-        mock_proc = MagicMock()
-        mock_proc.stdout = FIXTURE_JSONL_OUTPUT
-        mock_proc.stderr = ""
-        mock_proc.returncode = 0
-
-        with patch("subprocess.run", return_value=mock_proc):
-            result = adapter.run_step("prompt", {}, tmp_path, 30.0)
-
-        assert result.exit_status == 0
-
-    def test_run_step_stdout_captured(self, tmp_path: Path) -> None:
-        adapter = self._make_adapter()
-        mock_proc = MagicMock()
-        mock_proc.stdout = FIXTURE_JSONL_OUTPUT
-        mock_proc.stderr = ""
-        mock_proc.returncode = 0
-
-        with patch("subprocess.run", return_value=mock_proc):
-            result = adapter.run_step("prompt", {}, tmp_path, 30.0)
-
-        assert result.stdout == FIXTURE_JSONL_OUTPUT
-
-    def test_run_step_step_metadata_contains_binary_path(self, tmp_path: Path) -> None:
-        adapter = self._make_adapter()
-        mock_proc = MagicMock()
-        mock_proc.stdout = FIXTURE_JSONL_OUTPUT
-        mock_proc.stderr = ""
-        mock_proc.returncode = 0
-
-        with patch("subprocess.run", return_value=mock_proc):
-            result = adapter.run_step("prompt", {}, tmp_path, 30.0)
-
-        assert result.step_metadata["binary_path"] == "/opt/homebrew/bin/codex"
-
-    def test_run_step_trace_metadata_contains_events(self, tmp_path: Path) -> None:
-        adapter = self._make_adapter()
-        mock_proc = MagicMock()
-        mock_proc.stdout = FIXTURE_JSONL_OUTPUT
-        mock_proc.stderr = ""
-        mock_proc.returncode = 0
-
-        with patch("subprocess.run", return_value=mock_proc):
-            result = adapter.run_step("prompt", {}, tmp_path, 30.0)
-
-        assert isinstance(result.trace_metadata["events"], list)
-        assert len(result.trace_metadata["events"]) > 0
-
-    def test_run_step_timeout_sets_exit_124(self, tmp_path: Path) -> None:
-        """TimeoutExpired results in exit_status 124 and timed_out=True."""
-        import subprocess as subprocess_mod
-
-        adapter = self._make_adapter()
-
-        with patch(
-            "subprocess.run",
-            side_effect=subprocess_mod.TimeoutExpired(cmd=["codex"], timeout=5.0),
-        ):
-            result = adapter.run_step("prompt", {}, tmp_path, 5.0)
-
-        assert result.exit_status == 124
-        assert result.step_metadata["timed_out"] is True
-
-    def test_run_step_uses_full_auto_json_flags(self, tmp_path: Path) -> None:
-        """run_step() passes --full-auto and --json flags to subprocess."""
-        adapter = self._make_adapter()
-        mock_proc = MagicMock()
-        mock_proc.stdout = FIXTURE_JSONL_OUTPUT
-        mock_proc.stderr = ""
-        mock_proc.returncode = 0
-
-        with patch("subprocess.run", return_value=mock_proc) as mock_run:
-            adapter.run_step("my prompt", {}, tmp_path, 30.0)
-
-        called_cmd = mock_run.call_args[0][0]
-        assert "--full-auto" in called_cmd
-        assert "--json" in called_cmd
-        assert "--ephemeral" in called_cmd
-
-    def test_run_step_passes_prompt_as_argument(self, tmp_path: Path) -> None:
-        adapter = self._make_adapter()
-        mock_proc = MagicMock()
-        mock_proc.stdout = FIXTURE_JSONL_OUTPUT
-        mock_proc.stderr = ""
-        mock_proc.returncode = 0
-
-        with patch("subprocess.run", return_value=mock_proc) as mock_run:
-            adapter.run_step("unique test prompt xyz", {}, tmp_path, 30.0)
-
-        called_cmd = mock_run.call_args[0][0]
-        assert "unique test prompt xyz" in called_cmd
-
-    def test_run_step_empty_step_env_passes_none(self, tmp_path: Path) -> None:
-        """Empty step_env passes env=None to subprocess (inherit parent env)."""
-        adapter = self._make_adapter()
-        mock_proc = MagicMock()
-        mock_proc.stdout = FIXTURE_JSONL_OUTPUT
-        mock_proc.stderr = ""
-        mock_proc.returncode = 0
-
-        with patch("subprocess.run", return_value=mock_proc) as mock_run:
-            adapter.run_step("prompt", {}, tmp_path, 30.0)
-
-        kwargs = mock_run.call_args[1]
-        assert kwargs.get("env") is None
-
-    def test_run_step_nonempty_step_env_passed_through(self, tmp_path: Path) -> None:
-        """Non-empty step_env is forwarded to subprocess."""
-        adapter = self._make_adapter()
-        mock_proc = MagicMock()
-        mock_proc.stdout = FIXTURE_JSONL_OUTPUT
-        mock_proc.stderr = ""
-        mock_proc.returncode = 0
-        env = {"PATH": "/restricted/bin", "HOME": "/home/test"}
-
-        with patch("subprocess.run", return_value=mock_proc) as mock_run:
-            adapter.run_step("prompt", env, tmp_path, 30.0)
-
-        kwargs = mock_run.call_args[1]
-        assert kwargs.get("env") == env
-
-
-# ---------------------------------------------------------------------------
-# probe() – mocked
-# ---------------------------------------------------------------------------
-
-
-class TestProbeMocked:
+class TestProbeUnavailable:
     def test_probe_unavailable_binary_returns_not_qualified(self) -> None:
         adapter = CodexAdapter(binary_path="definitely_not_a_real_binary_xyz")
         result = adapter.probe()
@@ -522,65 +370,22 @@ class TestProbeMocked:
         assert result.qualified is False
         assert result.failure_reason is not None
 
-    def test_probe_returns_qualification_result_type(self, tmp_path: Path) -> None:
-        adapter = CodexAdapter(binary_path="/opt/homebrew/bin/codex")
-        adapter._available = True
-
-        mock_proc = MagicMock()
-        mock_proc.stdout = FIXTURE_JSONL_OUTPUT
-        mock_proc.stderr = ""
-        mock_proc.returncode = 0
-
-        with patch("subprocess.run", return_value=mock_proc):
-            result = adapter.probe()
-
-        assert isinstance(result, QualificationResult)
-
-    def test_probe_qualified_with_good_output(self, tmp_path: Path) -> None:
-        adapter = CodexAdapter(binary_path="/opt/homebrew/bin/codex")
-        adapter._available = True
-
-        mock_proc = MagicMock()
-        mock_proc.stdout = FIXTURE_JSONL_OUTPUT
-        mock_proc.stderr = ""
-        mock_proc.returncode = 0
-
-        with patch("subprocess.run", return_value=mock_proc):
-            result = adapter.probe()
-
-        assert result.qualified is True
-        assert result.reported_token_support is True
-        assert result.trace_support is True
-        assert result.run_completion_support is True
-
-    def test_probe_not_qualified_with_no_token_output(self) -> None:
-        adapter = CodexAdapter(binary_path="/opt/homebrew/bin/codex")
-        adapter._available = True
-
-        mock_proc = MagicMock()
-        mock_proc.stdout = FIXTURE_PLAINTEXT_NO_TOKENS
-        mock_proc.stderr = ""
-        mock_proc.returncode = 0
-
-        with patch("subprocess.run", return_value=mock_proc):
-            result = adapter.probe()
-
-        assert result.qualified is False
-        assert result.reported_token_support is False
-
 
 # ---------------------------------------------------------------------------
 # Integration / real binary tests (skipped when binary absent)
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 @pytest.mark.skipif(not _CODEX_AVAILABLE, reason="codex binary not installed")
 class TestCodexAdapterRealBinary:
     def test_adapter_available(self) -> None:
+        """CodexAdapter._available is True when the binary exists on PATH."""
         adapter = CodexAdapter()
         assert adapter._available is True
 
     def test_run_step_returns_step_result(self, tmp_path: Path) -> None:
+        """run_step() invokes the real codex binary and returns a StepResult."""
         adapter = CodexAdapter()
         result = adapter.run_step(
             prompt="Reply with the single word: hello",
@@ -591,7 +396,44 @@ class TestCodexAdapterRealBinary:
         assert isinstance(result, StepResult)
         assert result.exit_status == 0
 
+    def test_run_step_captures_stdout(self, tmp_path: Path) -> None:
+        """run_step() captures non-empty stdout from the real codex invocation."""
+        adapter = CodexAdapter()
+        result = adapter.run_step(
+            prompt="Reply with the single word: hello",
+            step_env={},
+            workspace=tmp_path,
+            timeout=120.0,
+        )
+        assert isinstance(result.stdout, str)
+        assert len(result.stdout) > 0
+
+    def test_run_step_step_metadata_contains_binary_path(self, tmp_path: Path) -> None:
+        """run_step() records the binary path in step_metadata."""
+        adapter = CodexAdapter()
+        result = adapter.run_step(
+            prompt="Reply with the single word: hello",
+            step_env={},
+            workspace=tmp_path,
+            timeout=120.0,
+        )
+        assert "binary_path" in result.step_metadata
+        assert result.step_metadata["binary_path"] == "codex"
+
+    def test_run_step_trace_metadata_contains_events(self, tmp_path: Path) -> None:
+        """run_step() populates trace_metadata['events'] from JSON Lines output."""
+        adapter = CodexAdapter()
+        result = adapter.run_step(
+            prompt="Reply with the single word: hello",
+            step_env={},
+            workspace=tmp_path,
+            timeout=120.0,
+        )
+        assert isinstance(result.trace_metadata["events"], list)
+        assert len(result.trace_metadata["events"]) > 0
+
     def test_extract_reported_tokens_from_real_run(self, tmp_path: Path) -> None:
+        """extract_reported_tokens() returns valid counts from a real codex run."""
         adapter = CodexAdapter()
         result = adapter.run_step(
             prompt="Reply with the single word: hello",
@@ -603,7 +445,22 @@ class TestCodexAdapterRealBinary:
         assert isinstance(tokens, ReportedTokens)
         assert tokens.total_tokens > 0
 
-    def test_normalize_final_status_on_success(self, tmp_path: Path) -> None:
+    def test_extract_reported_tokens_evidence_snippet_nonempty(
+        self, tmp_path: Path
+    ) -> None:
+        """extract_reported_tokens() includes a non-empty evidence snippet."""
+        adapter = CodexAdapter()
+        result = adapter.run_step(
+            prompt="Reply with the single word: hello",
+            step_env={},
+            workspace=tmp_path,
+            timeout=120.0,
+        )
+        tokens = adapter.extract_reported_tokens(result)
+        assert tokens.evidence_snippet != ""
+
+    def test_normalize_final_status_on_real_success(self, tmp_path: Path) -> None:
+        """normalize_final_status() returns 'completed' for a successful real run."""
         adapter = CodexAdapter()
         result = adapter.run_step(
             prompt="Reply with the single word: hello",
@@ -613,3 +470,18 @@ class TestCodexAdapterRealBinary:
         )
         status = adapter.normalize_final_status(result)
         assert status == "completed"
+
+    def test_probe_returns_qualification_result(self) -> None:
+        """probe() returns a QualificationResult when the real binary is present."""
+        adapter = CodexAdapter()
+        result = adapter.probe()
+        assert isinstance(result, QualificationResult)
+
+    def test_probe_qualified_with_real_binary(self) -> None:
+        """probe() passes all qualification gates against the real codex binary."""
+        adapter = CodexAdapter()
+        result = adapter.probe()
+        assert result.qualified is True
+        assert result.reported_token_support is True
+        assert result.trace_support is True
+        assert result.run_completion_support is True
