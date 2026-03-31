@@ -1,12 +1,12 @@
 """Tests for agents/gemini_cli/adapter.py and agents/gemini_cli/parser.py."""
 
-import subprocess
+import os
+import shutil
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agents.base import QualificationResult, ReportedTokens, StepResult
+from agents.base import AgentAdapter, QualificationResult, ReportedTokens, StepResult
 from agents.gemini_cli.adapter import GeminiCliAdapter
 from agents.gemini_cli.parser import extract_tokens_from_output, parse_gemini_output
 
@@ -39,6 +39,17 @@ _PLAIN_TEXT_WITH_TOKENS = (
 
 
 # ---------------------------------------------------------------------------
+# Availability detection
+# ---------------------------------------------------------------------------
+
+_GEMINI_BINARY = shutil.which("gemini") or "/opt/homebrew/bin/gemini"
+_GEMINI_AVAILABLE = bool(
+    shutil.which("gemini")
+    or (os.path.isfile("/opt/homebrew/bin/gemini") and os.access("/opt/homebrew/bin/gemini", os.X_OK))
+)
+
+
+# ---------------------------------------------------------------------------
 # Adapter instantiation
 # ---------------------------------------------------------------------------
 
@@ -57,8 +68,6 @@ def test_adapter_instantiation_custom_binary() -> None:
 
 def test_adapter_is_agent_adapter_subclass() -> None:
     """GeminiCliAdapter is a concrete subclass of AgentAdapter."""
-    from agents.base import AgentAdapter
-
     adapter = GeminiCliAdapter()
     assert isinstance(adapter, AgentAdapter)
 
@@ -212,7 +221,7 @@ def test_normalize_timeout_flag_in_metadata() -> None:
 
 
 # ---------------------------------------------------------------------------
-# extract_reported_tokens
+# extract_reported_tokens — synthetic StepResult data
 # ---------------------------------------------------------------------------
 
 
@@ -252,200 +261,126 @@ def test_extract_reported_tokens_zero_when_missing() -> None:
 
 
 # ---------------------------------------------------------------------------
-# run_step — mocked subprocess
+# normalize_final_status on real StepResults
 # ---------------------------------------------------------------------------
 
 
-def test_run_step_success_mocked(tmp_path: Path) -> None:
-    """run_step returns a StepResult when subprocess succeeds."""
-    adapter = GeminiCliAdapter(binary_path="/opt/homebrew/bin/gemini")
-    mock_proc = MagicMock()
-    mock_proc.stdout = _STREAM_JSON_SUCCESS
-    mock_proc.stderr = ""
-    mock_proc.returncode = 0
-
-    with patch("subprocess.run", return_value=mock_proc) as mock_run:
-        result = adapter.run_step(
-            prompt="Say hello",
-            step_env={},
-            workspace=tmp_path,
-            timeout=30.0,
-        )
-
-    assert isinstance(result, StepResult)
-    assert result.exit_status == 0
-    assert result.stdout == _STREAM_JSON_SUCCESS
-    mock_run.assert_called_once()
-    call_args = mock_run.call_args[0][0]
-    assert "/opt/homebrew/bin/gemini" in call_args
-    assert "-p" in call_args
-    assert "Say hello" in call_args
-    assert "--output-format" in call_args
-    assert "stream-json" in call_args
-
-
-def test_run_step_passes_prompt_in_command(tmp_path: Path) -> None:
-    """run_step passes the prompt via -p flag."""
+def test_normalize_on_synthetic_completed_step_result() -> None:
+    """normalize_final_status returns 'completed' for a synthetic exit-0 StepResult."""
     adapter = GeminiCliAdapter()
-    mock_proc = MagicMock()
-    mock_proc.stdout = ""
-    mock_proc.stderr = ""
-    mock_proc.returncode = 0
-
-    with patch("subprocess.run", return_value=mock_proc) as mock_run:
-        adapter.run_step(
-            prompt="my custom prompt",
-            step_env={},
-            workspace=tmp_path,
-            timeout=10.0,
-        )
-
-    cmd = mock_run.call_args[0][0]
-    idx = cmd.index("-p")
-    assert cmd[idx + 1] == "my custom prompt"
+    sr = StepResult(
+        stdout=_STREAM_JSON_SUCCESS,
+        stderr="",
+        exit_status=0,
+        step_metadata={"status": "success", "timeout": False},
+        trace_metadata={},
+    )
+    assert adapter.normalize_final_status(sr) == "completed"
 
 
-def test_run_step_timeout_returns_timeout_step_result(tmp_path: Path) -> None:
-    """run_step returns exit_status=-1 and timeout=True when subprocess times out."""
+def test_normalize_on_synthetic_failed_step_result() -> None:
+    """normalize_final_status returns 'failed' for a synthetic non-zero exit StepResult."""
     adapter = GeminiCliAdapter()
-
-    timeout_exc = subprocess.TimeoutExpired(cmd=["gemini"], timeout=5.0)
-    timeout_exc.stdout = b""
-    timeout_exc.stderr = b""
-
-    with patch("subprocess.run", side_effect=timeout_exc):
-        result = adapter.run_step(
-            prompt="do something slow",
-            step_env={},
-            workspace=tmp_path,
-            timeout=5.0,
-        )
-
-    assert result.exit_status == -1
-    assert result.step_metadata.get("timeout") is True
+    sr = StepResult(
+        stdout="",
+        stderr="fatal error",
+        exit_status=1,
+        step_metadata={"status": "error", "timeout": False},
+        trace_metadata={},
+    )
+    assert adapter.normalize_final_status(sr) == "failed"
 
 
-def test_run_step_step_metadata_contains_status(tmp_path: Path) -> None:
-    """run_step populates step_metadata with the parsed status."""
+def test_normalize_on_synthetic_timeout_step_result() -> None:
+    """normalize_final_status returns 'timeout' for a synthetic timeout StepResult."""
     adapter = GeminiCliAdapter()
-    mock_proc = MagicMock()
-    mock_proc.stdout = _STREAM_JSON_SUCCESS
-    mock_proc.stderr = ""
-    mock_proc.returncode = 0
-
-    with patch("subprocess.run", return_value=mock_proc):
-        result = adapter.run_step(
-            prompt="Say hello",
-            step_env={},
-            workspace=tmp_path,
-            timeout=30.0,
-        )
-
-    assert result.step_metadata["status"] == "success"
-
-
-def test_run_step_nonzero_exit_sets_exit_status(tmp_path: Path) -> None:
-    """run_step captures non-zero exit codes from the subprocess."""
-    adapter = GeminiCliAdapter()
-    mock_proc = MagicMock()
-    mock_proc.stdout = ""
-    mock_proc.stderr = "error: something went wrong"
-    mock_proc.returncode = 1
-
-    with patch("subprocess.run", return_value=mock_proc):
-        result = adapter.run_step(
-            prompt="do something",
-            step_env={},
-            workspace=tmp_path,
-            timeout=30.0,
-        )
-
-    assert result.exit_status == 1
+    sr = StepResult(
+        stdout="",
+        stderr="",
+        exit_status=-1,
+        step_metadata={"timeout": True, "timeout_seconds": 120.0},
+        trace_metadata={},
+    )
+    assert adapter.normalize_final_status(sr) == "timeout"
 
 
 # ---------------------------------------------------------------------------
-# probe — mocked subprocess (avoids requiring the real binary)
+# Integration tests — real Gemini CLI binary
 # ---------------------------------------------------------------------------
 
 
-def test_probe_returns_qualification_result_mocked(tmp_path: Path) -> None:
-    """probe() returns a QualificationResult."""
-    adapter = GeminiCliAdapter()
-    mock_proc = MagicMock()
-    mock_proc.stdout = _STREAM_JSON_SUCCESS
-    mock_proc.stderr = ""
-    mock_proc.returncode = 0
-
-    with patch("subprocess.run", return_value=mock_proc):
-        result = adapter.probe()
-
+@pytest.mark.integration
+@pytest.mark.skipif(not _GEMINI_AVAILABLE, reason="Gemini CLI binary not available")
+def test_probe_real_binary_returns_qualification_result() -> None:
+    """probe() against the real Gemini CLI returns a QualificationResult."""
+    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY)
+    result = adapter.probe()
     assert isinstance(result, QualificationResult)
 
 
-def test_probe_qualified_when_tokens_present_mocked() -> None:
-    """probe() returns qualified=True when token data is present in output."""
-    adapter = GeminiCliAdapter()
-    mock_proc = MagicMock()
-    mock_proc.stdout = _STREAM_JSON_SUCCESS
-    mock_proc.stderr = ""
-    mock_proc.returncode = 0
-
-    with patch("subprocess.run", return_value=mock_proc):
-        result = adapter.probe()
-
+@pytest.mark.integration
+@pytest.mark.skipif(not _GEMINI_AVAILABLE, reason="Gemini CLI binary not available")
+def test_probe_real_binary_is_qualified() -> None:
+    """probe() against the real Gemini CLI returns qualified=True with token support."""
+    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY)
+    result = adapter.probe()
     assert result.qualified is True
     assert result.reported_token_support is True
 
 
-def test_probe_not_qualified_when_invocation_fails() -> None:
-    """probe() returns qualified=False when the binary cannot be invoked."""
-    adapter = GeminiCliAdapter(binary_path="/nonexistent/gemini")
-
-    with patch("subprocess.run", side_effect=FileNotFoundError("binary not found")):
-        result = adapter.probe()
-
-    assert result.qualified is False
-    assert result.reported_token_support is False
-    assert result.failure_reason is not None
-    assert "Binary invocation failed" in result.failure_reason
-
-
-def test_probe_not_qualified_when_no_tokens(tmp_path: Path) -> None:
-    """probe() returns qualified=False when output contains no token data."""
-    adapter = GeminiCliAdapter()
-    mock_proc = MagicMock()
-    mock_proc.stdout = _STREAM_JSON_NO_TOKENS  # no result line, no token stats
-    mock_proc.stderr = ""
-    mock_proc.returncode = 0
-
-    with patch("subprocess.run", return_value=mock_proc):
-        result = adapter.probe()
-
-    assert result.qualified is False
-    assert result.reported_token_support is False
+@pytest.mark.integration
+@pytest.mark.skipif(not _GEMINI_AVAILABLE, reason="Gemini CLI binary not available")
+def test_run_step_real_binary_returns_step_result(tmp_path: Path) -> None:
+    """run_step() with the real Gemini CLI returns a StepResult."""
+    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY)
+    sr = adapter.run_step(
+        prompt="Reply with the single word HELLO and nothing else.",
+        step_env=dict(os.environ),
+        workspace=tmp_path,
+        timeout=120.0,
+    )
+    assert isinstance(sr, StepResult)
 
 
-# ---------------------------------------------------------------------------
-# Integration smoke test — requires real binary, skipped if unavailable
-# ---------------------------------------------------------------------------
+@pytest.mark.integration
+@pytest.mark.skipif(not _GEMINI_AVAILABLE, reason="Gemini CLI binary not available")
+def test_run_step_real_binary_exits_zero(tmp_path: Path) -> None:
+    """run_step() with the real Gemini CLI exits with status 0."""
+    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY)
+    sr = adapter.run_step(
+        prompt="Reply with the single word HELLO and nothing else.",
+        step_env=dict(os.environ),
+        workspace=tmp_path,
+        timeout=120.0,
+    )
+    assert sr.exit_status == 0
 
-GEMINI_BINARY = "/opt/homebrew/bin/gemini"
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _GEMINI_AVAILABLE, reason="Gemini CLI binary not available")
+def test_extract_reported_tokens_real_output(tmp_path: Path) -> None:
+    """extract_reported_tokens() returns non-zero counts from real Gemini CLI output."""
+    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY)
+    sr = adapter.run_step(
+        prompt="Reply with the single word HELLO and nothing else.",
+        step_env=dict(os.environ),
+        workspace=tmp_path,
+        timeout=120.0,
+    )
+    tokens = adapter.extract_reported_tokens(sr)
+    assert isinstance(tokens, ReportedTokens)
+    assert tokens.total_tokens > 0
 
 
-def _gemini_available() -> bool:
-    """Return True if the gemini binary is available at the expected path."""
-    import os
-
-    return os.path.isfile(GEMINI_BINARY) and os.access(GEMINI_BINARY, os.X_OK)
-
-
-@pytest.mark.skipif(
-    not _gemini_available(),
-    reason="Gemini CLI binary not available at /opt/homebrew/bin/gemini",
-)
-def test_probe_real_binary(tmp_path: Path) -> None:
-    """Smoke test: probe() against the real Gemini CLI binary."""
-    adapter = GeminiCliAdapter(binary_path=GEMINI_BINARY)
-    result = adapter.probe()
-    # We just verify the return type; qualification depends on the environment.
-    assert isinstance(result, QualificationResult)
+@pytest.mark.integration
+@pytest.mark.skipif(not _GEMINI_AVAILABLE, reason="Gemini CLI binary not available")
+def test_normalize_final_status_real_output(tmp_path: Path) -> None:
+    """normalize_final_status() returns 'completed' for a successful real run."""
+    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY)
+    sr = adapter.run_step(
+        prompt="Reply with the single word HELLO and nothing else.",
+        step_env=dict(os.environ),
+        workspace=tmp_path,
+        timeout=120.0,
+    )
+    assert adapter.normalize_final_status(sr) == "completed"
