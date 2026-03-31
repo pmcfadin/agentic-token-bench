@@ -28,6 +28,35 @@ uv sync
 uv run atb --help
 ```
 
+## Reproduction
+
+Full reproduction instructions are in [docs/reproduction.md](docs/reproduction.md).
+
+**Short path (no agent CLI required):**
+
+```bash
+git clone https://github.com/pmcfadin/agentic-token-bench.git
+cd agentic-token-bench
+uv sync
+uv run pytest
+uv run python scripts/generate_fixture_runs.py
+uv run python scripts/generate_scorecards.py
+cat benchmarks/results/official/scorecard.md
+```
+
+This exercises the full pipeline using fixture data and completes in under 10 minutes.
+
+**To run against a live agent**, you also need the agent CLI installed and at least one agent qualified:
+
+```bash
+uv run atb qualify-agent claude
+uv run atb run-task benchmarks/tasks/cassandra/official/<task>.yaml \
+  --agent claude --variant tool_variant
+uv run atb generate-scorecard benchmarks/results --agent-id claude
+```
+
+See [docs/reproduction.md](docs/reproduction.md) for prerequisites, tool installation, agent qualification, and result interpretation.
+
 ## License
 
 Apache 2.0
