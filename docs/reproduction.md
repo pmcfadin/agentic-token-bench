@@ -233,6 +233,17 @@ uv run python scripts/generate_scorecards.py
 
 Per-family scorecards are written as `benchmarks/results/official/{family}_scorecard.md` and `{family}_scorecard.json`.
 
+### HTML report and benchmark overview
+
+Generate the comparative report and the companion walkthrough page:
+
+```bash
+uv run atb generate-benchmark-overview benchmarks/results
+uv run atb generate-html-report benchmarks/results
+```
+
+The overview page explains the run lifecycle and token accounting. The report page shows before/after comparisons and agent-to-agent token usage on the same tasks.
+
 ---
 
 ## 7. Using Fixture Data

@@ -41,6 +41,8 @@ uv sync
 uv run pytest
 uv run python scripts/generate_fixture_runs.py
 uv run python scripts/generate_scorecards.py
+uv run atb generate-benchmark-overview benchmarks/results
+uv run atb generate-html-report benchmarks/results
 cat benchmarks/results/official/scorecard.md
 ```
 

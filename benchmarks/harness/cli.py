@@ -366,6 +366,66 @@ def generate_scorecard(
     typer.echo(f"generate-scorecard: wrote {json_path}")
 
 
+@app.command("generate-html-report")
+def generate_html_report(
+    results_dir: str = typer.Argument(default="benchmarks/results", help="Results directory"),
+    tasks_dir: str = typer.Option(
+        default="benchmarks/tasks/cassandra/official",
+        help="Directory containing task YAML manifests",
+    ),
+    output_path: str = typer.Option(
+        default="",
+        help="Output HTML file (defaults to <results_dir>/report.html)",
+    ),
+) -> None:
+    """Generate a standalone HTML report from run.json files."""
+    from benchmarks.harness.html_report import load_run_records, render_html_report
+
+    results_path = Path(results_dir)
+    if not results_path.exists():
+        typer.echo(f"generate-html-report: results directory not found: {results_path}", err=True)
+        raise typer.Exit(1)
+
+    runs = load_run_records(results_path)
+    if not runs:
+        typer.echo(f"generate-html-report: no run.json files found under {results_path}", err=True)
+        raise typer.Exit(1)
+
+    html = render_html_report(
+        runs,
+        tasks_dir=Path(tasks_dir),
+        source_results_dir=results_path,
+    )
+
+    out_path = Path(output_path) if output_path else results_path / "report.html"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(html, encoding="utf-8")
+
+    typer.echo(f"generate-html-report: loaded {len(runs)} runs")
+    typer.echo(f"generate-html-report: wrote {out_path}")
+
+
+@app.command("generate-benchmark-overview")
+def generate_benchmark_overview(
+    results_dir: str = typer.Argument(
+        default="benchmarks/results",
+        help="Results directory used to place the overview page",
+    ),
+    output_path: str = typer.Option(
+        default="",
+        help="Output HTML file (defaults to <results_dir>/benchmark-overview.html)",
+    ),
+) -> None:
+    """Generate a standalone HTML page that explains the benchmark."""
+    from benchmarks.harness.benchmark_overview import write_benchmark_overview_html
+
+    results_path = Path(results_dir)
+    out_path = Path(output_path) if output_path else results_path / "benchmark-overview.html"
+    write_benchmark_overview_html(out_path)
+
+    typer.echo(f"generate-benchmark-overview: wrote {out_path}")
+
+
 @app.command()
 def validate_schemas(
     tasks_dir: str = typer.Option(
