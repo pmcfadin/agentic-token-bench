@@ -93,14 +93,18 @@ def run_task(
     task_file: str = typer.Argument(help="Path to the task YAML manifest"),
     agent: str = typer.Option(help="Agent ID"),
     variant: str = typer.Option(default="tool_variant", help="baseline or tool_variant"),
-    workspace: str = typer.Option(default="", help="Path to workspace directory (default: temp dir)"),
+    workspace: str = typer.Option(default="", help="Path to pre-existing workspace (default: clone from repo.yaml)"),
     results_dir: str = typer.Option(default="benchmarks/results", help="Results directory"),
+    skip_checkout: bool = typer.Option(default=False, help="Skip Cassandra checkout (use existing workspace)"),
 ) -> None:
-    """Run a single benchmark task from a YAML manifest file."""
-    import tempfile
+    """Run a single benchmark task from a YAML manifest file.
 
+    By default, clones Apache Cassandra at the pinned commit into a temp
+    workspace. Pass --workspace to use a pre-existing checkout.
+    """
     from benchmarks.harness.models import TaskManifest
     from benchmarks.harness.runner import BenchmarkRunner
+    from benchmarks.harness.workspace import WorkspaceManager
 
     task_path = Path(task_file)
     if not task_path.exists():
@@ -120,7 +124,32 @@ def run_task(
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
 
-    ws_path = Path(workspace) if workspace else Path(tempfile.mkdtemp())
+    # Prepare workspace
+    ws_mgr = WorkspaceManager(cache_dir=Path(".cache/repos"))
+    ws_path: Path
+    if workspace:
+        ws_path = Path(workspace)
+        if not ws_path.exists():
+            typer.echo(f"run-task: workspace not found: {ws_path}", err=True)
+            raise typer.Exit(1)
+    elif skip_checkout:
+        import tempfile
+        ws_path = Path(tempfile.mkdtemp())
+    else:
+        # Load repo config and clone
+        repo_yaml = Path("benchmarks/repos/cassandra/repo.yaml")
+        if not repo_yaml.exists():
+            typer.echo("run-task: benchmarks/repos/cassandra/repo.yaml not found", err=True)
+            raise typer.Exit(1)
+        repo_config = ws_mgr.load_repo_config(repo_yaml)
+        typer.echo(f"run-task: cloning {repo_config['name']} at {manifest.pinned_commit[:12]}...")
+        ws_path = ws_mgr.prepare(
+            repo_url=repo_config["url"],
+            commit=manifest.pinned_commit,
+            run_id=f"{manifest.task_id}-{variant}",
+        )
+        typer.echo(f"run-task: workspace ready at {ws_path}")
+
     runner = BenchmarkRunner(results_dir=Path(results_dir))
 
     try:

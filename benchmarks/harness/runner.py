@@ -186,10 +186,21 @@ class BenchmarkRunner:
                 )
             )
 
-            # Extract tool invocations from trace_metadata for enforcement check.
+            # Extract tool invocations from trace_metadata if available.
+            # Agent CLIs may not populate this field — in v1, PATH control is
+            # the primary enforcement mechanism.  We also scan stdout for
+            # evidence of tool usage as a secondary check.
             tool_invocations: list[dict] = step_result.trace_metadata.get(
                 "tool_invocations", []
             )
+
+            # If no structured invocations, scan stdout for tool name mentions
+            # as a best-effort detection.  This is weaker than wrapper-based
+            # tracing but works with unmodified agent CLIs.
+            if not tool_invocations and step.required_tool and variant == "tool_variant":
+                tool_name = step.required_tool
+                if tool_name in step_result.stdout or tool_name in step_result.stderr:
+                    tool_invocations = [{"tool_id": tool_name, "source": "stdout_scan"}]
 
             # Record each invocation as a trace event.
             for inv_dict in tool_invocations:
