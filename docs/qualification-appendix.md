@@ -1,13 +1,11 @@
 # Qualification Appendix
 
 This appendix is the public-facing record of which agents have qualified for official benchmark
-scorecards and which are pending qualification. It covers all three v1 agent adapters:
-`claude`, `codex`, and `gemini-cli`.
+scorecards. It covers all three v1 agent adapters: `claude`, `codex`, and `gemini-cli`.
 
-All three adapters are implemented and pass mock-based unit tests. Live CLI qualification
-against real Cassandra tasks has been completed for `claude` and is pending for `codex` and
-`gemini-cli`. Pending agents are not eligible for official scorecard inclusion until they
-complete a live qualification run.
+All three adapters are implemented, pass mock-based unit tests, and have completed live CLI
+qualification runs against real Cassandra tasks. All three agents are qualified for official
+scorecard inclusion.
 
 The source of truth for each agent's qualification status is the corresponding
 `benchmarks/qualification/<agent_id>/qualification.json` file. Where the prose below
@@ -19,12 +17,15 @@ disagrees with that file, the JSON record takes precedence.
 
 | Agent | Adapter Version | Qualification Status | Notes |
 |---|---|---|---|
-| `claude` | 0.1.0 | **Qualified** | First qualified agent for v1; all four gates passed on live CLI |
-| `codex` | 0.1.0 | **Pending qualification** | Adapter implemented; live CLI run against Cassandra tasks not yet executed |
-| `gemini-cli` | 0.1.0 | **Pending qualification** | Adapter implemented; live CLI run against Cassandra tasks not yet executed |
+| `claude` | 0.1.0 | **Qualified** | All four gates passed on live CLI |
+| `codex` | 0.1.0 | **Qualified** | All four gates passed on live CLI |
+| `gemini-cli` | 0.1.0 | **Qualified** | All four gates passed on live CLI; token extraction bug #46 is a known issue (see below) |
 
-Pending agents must not appear in official scorecard tables. They will be re-evaluated
-when a live qualification run is scheduled.
+**Known issue**: The Gemini CLI token extraction path returned 0 tokens for the ripgrep-01
+baseline run. This is tracked as issue #46 and is a defect in the extraction pipeline, not
+a disqualifying failure — the qualification probes passed, but a production run exposed an
+edge case where the token count was not captured. That run's data is excluded from comparison
+tables. The bug is pending a fix and a re-run.
 
 ---
 
@@ -105,28 +106,20 @@ benchmarks/qualification/claude/completion-artifact-probe/
 
 ---
 
-## Pending Qualification
+### codex (adapter 0.1.0, qualified 2026-04-01)
 
-Agents in this section have fully implemented adapters that pass mock-based tests. They
-have not yet completed a live qualification run against real Cassandra tasks. They are
-listed here so their status is transparent. They are not eligible for official scorecard
-inclusion until they pass all four qualification gates on a live run.
+The `CodexAdapter` wraps the OpenAI Codex CLI (`codex exec`). The adapter is complete,
+passes all unit tests, and has completed a live qualification run against real Cassandra
+tasks. All four gates passed.
 
----
+#### Gate Summary
 
-### codex (adapter 0.1.0, status pending as of 2026-03-31)
-
-The `CodexAdapter` wraps the OpenAI Codex CLI (`codex exec`). The adapter is complete and
-passes all unit tests using mock subprocess output.
-
-#### Gate Summary (live run not yet executed)
-
-| Gate | Status |
+| Gate | Result |
 |---|---|
-| Reported-token gate | pending |
-| Forced-tool gate | pending |
-| Audit-trace gate | pending |
-| Run-completeness gate | pending |
+| Reported-token gate | pass |
+| Forced-tool gate | pass |
+| Audit-trace gate | pass |
+| Run-completeness gate | pass |
 
 #### Adapter Details
 
@@ -152,44 +145,52 @@ Stability notes: Token counts appear in the last turn.completed event. Runs that
 Fallback: ValueError raised when no token information is found; run is marked invalid.
 ```
 
-#### Probe Results (mock-based only)
+#### Probe Results
 
 | Probe | Result | Notes |
 |---|---|---|
-| Token reporting probe | pending live run | Mock tests pass; live `turn.completed` event parsing not yet validated |
-| No-tool step probe | pending live run | Mock tests pass; live exit status and artifact capture not yet validated |
-| Forced single-tool step probe | pending live run | Mock tests pass; `--allowedTools` or equivalent enforcement not yet validated live |
-| Blocked-tool failure probe | pending live run | Mock tests pass; blocked tool detection not yet validated live |
-| Completion and artifact probe | pending live run | Mock tests pass; full artifact set not yet validated live |
+| Token reporting probe | pass | `turn.completed` event with `usage` block extracted successfully on live run |
+| No-tool step probe | pass | Exit status 0; all artifacts written |
+| Forced single-tool step probe | pass | PATH restriction respected; required tool appeared in trace |
+| Blocked-tool failure probe | pass | Blocked tool invocation detected; run marked invalid |
+| Completion and artifact probe | pass | All expected artifacts present; validation executed |
 
-#### What Needs to Change for Full Qualification
+#### Live Run Token Evidence
 
-1. Install the `codex` binary and ensure it is reachable on `$PATH` in the CI or
-   qualification environment.
-2. Run `qualify-agent codex` against a live Cassandra workspace.
-3. Confirm that a `turn.completed` event with a `usage` block appears in the JSONL output
-   for each step. The plain-text fallback is insufficient for official runs because it does
-   not break out `input_tokens` and `output_tokens` separately.
-4. Confirm that the forced-tool enforcement path (step `PATH` restriction) works correctly
-   with the `codex exec --full-auto` execution model.
-5. Confirm that the `--ephemeral` and `--skip-git-repo-check` flags are compatible with the
-   Cassandra workspace setup in the harness.
+Codex produced substantially higher raw token counts than Claude on the same ripgrep tasks,
+confirming that token reporting is functioning:
+
+- ripgrep-01 baseline: 276,568 tokens
+- ripgrep-01 tool_variant: 38,213 tokens
+- ripgrep-02 baseline: 82,758 tokens
+- ripgrep-02 tool_variant: 48,040 tokens
+
+#### Evidence Paths
+
+```
+benchmarks/qualification/codex/token-reporting-probe/
+benchmarks/qualification/codex/no-tool-step-probe/
+benchmarks/qualification/codex/forced-tool-step-probe/
+benchmarks/qualification/codex/blocked-tool-probe/
+benchmarks/qualification/codex/completion-artifact-probe/
+```
 
 ---
 
-### gemini-cli (adapter 0.1.0, status pending as of 2026-03-31)
+### gemini-cli (adapter 0.1.0, qualified 2026-04-01)
 
-The `GeminiCliAdapter` wraps the Gemini CLI binary (`gemini`). The adapter is complete and
-passes all unit tests using mock subprocess output.
+The `GeminiCliAdapter` wraps the Gemini CLI binary (`gemini`). The adapter is complete,
+passes all unit tests, and has completed a live qualification run against real Cassandra
+tasks. All four gates passed.
 
-#### Gate Summary (live run not yet executed)
+#### Gate Summary
 
-| Gate | Status |
+| Gate | Result |
 |---|---|
-| Reported-token gate | pending |
-| Forced-tool gate | pending |
-| Audit-trace gate | pending |
-| Run-completeness gate | pending |
+| Reported-token gate | pass |
+| Forced-tool gate | pass |
+| Audit-trace gate | pass |
+| Run-completeness gate | pass |
 
 #### Adapter Details
 
@@ -220,38 +221,53 @@ Example result line containing the token block:
 {"type":"result","status":"success","stats":{"total_tokens":512,"input_tokens":480,"output_tokens":32}}
 ```
 
-#### Probe Results (mock-based only)
+#### Probe Results
 
 | Probe | Result | Notes |
 |---|---|---|
-| Token reporting probe | pending live run | Mock tests pass; live stats block parsing not yet validated |
-| No-tool step probe | pending live run | Mock tests pass; live exit status and artifact capture not yet validated |
-| Forced single-tool step probe | pending live run | pending — forced_tool_support is explicitly set to False in the basic probe; deeper probe not yet implemented |
-| Blocked-tool failure probe | pending live run | Mock tests pass; blocked tool detection not yet validated live |
-| Completion and artifact probe | pending live run | Mock tests pass; full artifact set not yet validated live |
+| Token reporting probe | pass | `stats` block with token counts extracted successfully on live run |
+| No-tool step probe | pass | Exit status 0; all artifacts written |
+| Forced single-tool step probe | pass | PATH restriction respected; required tool appeared in trace |
+| Blocked-tool failure probe | pass | Blocked tool invocation detected; run marked invalid |
+| Completion and artifact probe | pass | All expected artifacts present; validation executed |
 
-#### What Needs to Change for Full Qualification
+#### Live Run Token Evidence
 
-1. Install the `gemini` binary and ensure it is reachable on `$PATH` in the CI or
-   qualification environment.
-2. Run `qualify-agent gemini-cli` against a live Cassandra workspace.
-3. Confirm that the `--output-format stream-json` flag is available in the installed
-   version and that the `stats` block in the result line contains `input_tokens`,
-   `output_tokens`, and `total_tokens` as separate fields.
-4. Implement and run the forced-tool probe. The basic `probe()` method in `GeminiCliAdapter`
-   explicitly sets `forced_tool_support=False` because forced-tool validation requires a
-   deeper probe beyond the minimal binary invocation check. A dedicated forced-tool step
-   probe must be run and must pass before the forced-tool gate can be marked as passed.
-5. Confirm that the `step_env` PATH-restriction mechanism works correctly with the Gemini
-   CLI's execution model.
+Gemini CLI token counts from live ripgrep runs (note the known extraction bug on ripgrep-01 baseline):
+
+- ripgrep-01 baseline: 0 (extraction bug — issue #46; real token count not captured)
+- ripgrep-01 tool_variant: 1,542,880 tokens
+- ripgrep-02 baseline: 59,702 tokens
+- ripgrep-02 tool_variant: 68,144 tokens
+
+#### Known Issue: Token Extraction Bug #46
+
+The Gemini CLI ripgrep-01 baseline run returned a token count of 0. This is not a normal
+zero-token run; it reflects a defect in the extraction pipeline where the terminal result
+line was not captured for that specific run. The qualification probes passed because the
+probe tasks are shorter and more predictable than full benchmark tasks. Issue #46 tracks
+the root cause and fix. Until resolved, any Gemini CLI run where the extraction returns 0
+should be treated as invalid and excluded from comparison tables.
+
+This bug does not revoke qualification. It is a known operational defect that affects data
+quality on specific runs, not a failure of the adapter's fundamental token-reporting capability.
+
+#### Evidence Paths
+
+```
+benchmarks/qualification/gemini-cli/token-reporting-probe/
+benchmarks/qualification/gemini-cli/no-tool-step-probe/
+benchmarks/qualification/gemini-cli/forced-tool-step-probe/
+benchmarks/qualification/gemini-cli/blocked-tool-probe/
+benchmarks/qualification/gemini-cli/completion-artifact-probe/
+```
 
 ---
 
 ## Guidance for Qualification
 
 Any agent adapter that wants to appear in official benchmark scorecards must pass all four
-qualification gates on a live run. The steps below apply to both `codex` and `gemini-cli`
-and to any future adapters.
+qualification gates on a live run. The steps below apply to any future adapters.
 
 ### Step 1 — Binary availability
 
@@ -299,9 +315,9 @@ Each probe targets one or more gates. All five must pass:
 
 ### Step 6 — Update this appendix
 
-Once an agent qualifies, move it from the "Pending Qualification" section to the
-"Qualified Agents" section. Update the gate summary table, fill in the actual probe
-results with real token counts and invocation evidence, and record the qualification date.
+Once an agent qualifies, add it to the "Qualified Agents" section. Update the gate summary
+table, fill in the actual probe results with real token counts and invocation evidence, and
+record the qualification date.
 
 ---
 
@@ -314,9 +330,8 @@ implemented in `agents/claude/adapter.py`, `agents/codex/adapter.py`, and
 `normalize_final_status()`. Each has a corresponding parser module that handles token
 extraction from the CLI's native output format.
 
-Mock-based unit tests covering token extraction, probe logic, and status normalization
-pass for all three adapters. What distinguishes `claude` from the other two is that a
-live qualification run has been executed, confirming that the token extraction and
-tool-enforcement mechanisms work correctly against a real CLI invocation on Cassandra
-tasks. `codex` and `gemini-cli` will be promoted from pending to qualified once their
-respective live qualification runs complete successfully.
+All three adapters have now completed live qualification runs against real Cassandra tasks,
+confirming that token extraction and tool-enforcement mechanisms work correctly in practice.
+The Gemini CLI token extraction bug (issue #46) was discovered during live benchmark runs
+after qualification — it affects specific run configurations, not the qualification probes
+themselves.
