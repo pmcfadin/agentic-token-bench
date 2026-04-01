@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -15,6 +14,83 @@ from benchmarks.harness.workspace import WorkspaceManager, ensure_cache
 # ---------------------------------------------------------------------------
 
 _REPO_YAML = Path(__file__).parent.parent / "benchmarks" / "repos" / "cassandra" / "repo.yaml"
+
+
+def _git_available() -> bool:
+    try:
+        subprocess.run(["git", "--version"], capture_output=True, check=True)
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Fixture: tiny local git repo
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def local_repo(tmp_path: Path) -> tuple[Path, str]:
+    """Create a minimal local git repo and return (bare_origin_path, commit_sha).
+
+    The bare origin can be used as a ``repo_url`` for :class:`WorkspaceManager`
+    without any network access.
+    """
+    # Create a bare origin to clone from
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    subprocess.run(["git", "init", "--bare", str(origin)], check=True, capture_output=True)
+
+    # Create a working copy, commit a file, push to origin
+    work = tmp_path / "work"
+    work.mkdir()
+    subprocess.run(["git", "init", str(work)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(origin)],
+        cwd=work,
+        check=True,
+        capture_output=True,
+    )
+
+    (work / "README.md").write_text("hello")
+    subprocess.run(
+        [
+            "git",
+            "-c", "user.email=test@test.com",
+            "-c", "user.name=Test",
+            "add", "README.md",
+        ],
+        cwd=work,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-c", "user.email=test@test.com",
+            "-c", "user.name=Test",
+            "commit", "-m", "init",
+        ],
+        cwd=work,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "push", "origin", "HEAD:refs/heads/main"],
+        cwd=work,
+        check=True,
+        capture_output=True,
+    )
+
+    sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=work,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    return origin, sha
 
 
 # ---------------------------------------------------------------------------
@@ -88,271 +164,55 @@ class TestCleanup:
 
 
 # ---------------------------------------------------------------------------
-# prepare — mocked git calls
+# prepare — real git operations against a local repo
 # ---------------------------------------------------------------------------
-
-
-def _mock_run_success(*args, **kwargs) -> MagicMock:  # noqa: ARG001
-    result = MagicMock()
-    result.returncode = 0
-    return result
-
-
-class TestPrepareMocked:
-    """These tests mock subprocess.run to avoid real network calls."""
-
-    def _setup_fake_repo(self, tmp_path: Path, run_id: str) -> Path:
-        """Create the repo directory that would be created by git clone."""
-        repo_dir = tmp_path / run_id / "repo"
-        repo_dir.mkdir(parents=True, exist_ok=True)
-        return repo_dir
-
-    def test_prepare_creates_workspace_directory(self, tmp_path: Path) -> None:
-        run_id = "run-001"
-        # Pre-create repo dir so the function returns the right path
-        repo_dir = self._setup_fake_repo(tmp_path, run_id)
-
-        with patch("subprocess.run", side_effect=_mock_run_success):
-            mgr = WorkspaceManager()
-            result = mgr.prepare(
-                repo_url="https://example.com/repo.git",
-                commit="abc123",
-                run_id=run_id,
-                base_dir=tmp_path,
-            )
-
-        assert result == repo_dir
-
-    def test_prepare_calls_git_clone(self, tmp_path: Path) -> None:
-        run_id = "run-002"
-        self._setup_fake_repo(tmp_path, run_id)
-
-        with patch("subprocess.run", side_effect=_mock_run_success) as mock_run:
-            mgr = WorkspaceManager()
-            mgr.prepare(
-                repo_url="https://example.com/repo.git",
-                commit="deadbeef",
-                run_id=run_id,
-                base_dir=tmp_path,
-            )
-
-        commands = [c.args[0] for c in mock_run.call_args_list]
-        assert any("clone" in cmd for cmd in commands)
-
-    def test_prepare_calls_git_fetch_and_checkout(self, tmp_path: Path) -> None:
-        run_id = "run-003"
-        self._setup_fake_repo(tmp_path, run_id)
-
-        with patch("subprocess.run", side_effect=_mock_run_success) as mock_run:
-            mgr = WorkspaceManager()
-            mgr.prepare(
-                repo_url="https://example.com/repo.git",
-                commit="deadbeef",
-                run_id=run_id,
-                base_dir=tmp_path,
-            )
-
-        flat = [arg for c in mock_run.call_args_list for arg in c.args[0]]
-        assert "fetch" in flat
-        assert "checkout" in flat
-        assert "deadbeef" in flat
-
-    def test_prepare_uses_reference_when_cache_dir_provided(self, tmp_path: Path) -> None:
-        run_id = "run-004"
-        cache_dir = tmp_path / "cache"
-        self._setup_fake_repo(tmp_path, run_id)
-
-        # ensure_cache will look for cache_dir/repo; pre-create it
-        cached_bare = cache_dir / "repo"
-        cached_bare.mkdir(parents=True, exist_ok=True)
-
-        with patch("subprocess.run", side_effect=_mock_run_success) as mock_run:
-            mgr = WorkspaceManager(cache_dir=cache_dir)
-            mgr.prepare(
-                repo_url="https://example.com/repo.git",
-                commit="abc123",
-                run_id=run_id,
-                base_dir=tmp_path,
-            )
-
-        flat = [arg for c in mock_run.call_args_list for arg in c.args[0]]
-        assert "--reference" in flat
-
-    def test_prepare_creates_base_dir_if_missing(self, tmp_path: Path) -> None:
-        base_dir = tmp_path / "nested" / "base"
-        run_id = "run-005"
-        # Pre-create repo dir
-        repo_dir = base_dir / run_id / "repo"
-        repo_dir.mkdir(parents=True, exist_ok=True)
-
-        with patch("subprocess.run", side_effect=_mock_run_success):
-            mgr = WorkspaceManager()
-            mgr.prepare(
-                repo_url="https://example.com/repo.git",
-                commit="abc123",
-                run_id=run_id,
-                base_dir=base_dir,
-            )
-
-        assert base_dir.exists()
-
-    def test_prepare_uses_temp_dir_when_base_dir_is_none(self, tmp_path: Path) -> None:
-        """When base_dir is None a temp directory is created automatically."""
-        run_id = "run-006"
-
-        temp_base = tmp_path / "tmpbase"
-        repo_dir = temp_base / run_id / "repo"
-        repo_dir.mkdir(parents=True, exist_ok=True)
-
-        with (
-            patch("tempfile.mkdtemp", return_value=str(temp_base)),
-            patch("subprocess.run", side_effect=_mock_run_success),
-        ):
-            mgr = WorkspaceManager()
-            result = mgr.prepare(
-                repo_url="https://example.com/repo.git",
-                commit="abc123",
-                run_id=run_id,
-            )
-
-        assert result.is_relative_to(temp_base)
-
-
-# ---------------------------------------------------------------------------
-# ensure_cache — mocked git calls
-# ---------------------------------------------------------------------------
-
-
-class TestEnsureCache:
-    def test_clones_bare_when_cache_missing(self, tmp_path: Path) -> None:
-        cache_dir = tmp_path / "cache"
-
-        with patch("subprocess.run", side_effect=_mock_run_success) as mock_run:
-            result = ensure_cache("https://example.com/myrepo.git", cache_dir)
-
-        flat = [arg for c in mock_run.call_args_list for arg in c.args[0]]
-        assert "clone" in flat
-        assert "--bare" in flat
-        assert result == cache_dir / "myrepo"
-
-    def test_fetches_when_cache_exists(self, tmp_path: Path) -> None:
-        cache_dir = tmp_path / "cache"
-        cached = cache_dir / "myrepo"
-        cached.mkdir(parents=True, exist_ok=True)
-
-        with patch("subprocess.run", side_effect=_mock_run_success) as mock_run:
-            result = ensure_cache("https://example.com/myrepo.git", cache_dir)
-
-        flat = [arg for c in mock_run.call_args_list for arg in c.args[0]]
-        assert "fetch" in flat
-        assert "clone" not in flat
-        assert result == cached
-
-    def test_slug_strips_git_suffix(self, tmp_path: Path) -> None:
-        cache_dir = tmp_path / "cache"
-
-        with patch("subprocess.run", side_effect=_mock_run_success):
-            result = ensure_cache("https://github.com/apache/cassandra.git", cache_dir)
-
-        assert result.name == "cassandra"
-        assert result == cache_dir / "cassandra"
-
-
-# ---------------------------------------------------------------------------
-# Real git tests — skipped if git is not available or there is no network
-# ---------------------------------------------------------------------------
-
-
-def _git_available() -> bool:
-    try:
-        subprocess.run(["git", "--version"], capture_output=True, check=True)
-        return True
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return False
 
 
 @pytest.mark.skipif(not _git_available(), reason="git not found")
-class TestPrepareWithLocalRepo:
-    """Uses a locally-initialised bare git repo to avoid network calls."""
+class TestPrepare:
+    """Uses a locally-initialised git repo to avoid any network calls."""
 
-    def _make_local_repo(self, tmp_path: Path) -> tuple[Path, str]:
-        """Create a minimal git repo with one commit; return (repo_url, commit_sha)."""
-        origin = tmp_path / "origin.git"
-        origin.mkdir()
-        subprocess.run(["git", "init", "--bare", str(origin)], check=True, capture_output=True)
-
-        work = tmp_path / "work"
-        work.mkdir()
-        subprocess.run(["git", "init", str(work)], check=True, capture_output=True)
-        subprocess.run(
-            ["git", "remote", "add", "origin", str(origin)],
-            cwd=work,
-            check=True,
-            capture_output=True,
-        )
-
-        (work / "README.md").write_text("hello")
-        subprocess.run(
-            ["git", "-c", "user.email=test@test.com", "-c", "user.name=Test",
-             "commit", "--allow-empty", "-m", "init"],
-            cwd=work,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "add", "README.md"],
-            cwd=work,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-c", "user.email=test@test.com", "-c", "user.name=Test",
-             "commit", "-m", "add readme"],
-            cwd=work,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "push", "origin", "HEAD:refs/heads/main"],
-            cwd=work,
-            check=True,
-            capture_output=True,
-        )
-
-        sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=work,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-
-        return origin, sha
-
-    def test_prepare_creates_repo_directory(self, tmp_path: Path) -> None:
-        origin, sha = self._make_local_repo(tmp_path)
+    def test_prepare_creates_repo_directory(self, tmp_path: Path, local_repo: tuple[Path, str]) -> None:
+        origin, sha = local_repo
         workspace_base = tmp_path / "workspaces"
 
         mgr = WorkspaceManager()
         repo_dir = mgr.prepare(
             repo_url=str(origin),
             commit=sha,
-            run_id="local-run-001",
+            run_id="run-001",
             base_dir=workspace_base,
         )
 
         assert repo_dir.exists()
         assert repo_dir.is_dir()
 
-    def test_prepare_checks_out_correct_commit(self, tmp_path: Path) -> None:
-        origin, sha = self._make_local_repo(tmp_path)
+    def test_prepare_returns_repo_subdirectory(self, tmp_path: Path, local_repo: tuple[Path, str]) -> None:
+        origin, sha = local_repo
         workspace_base = tmp_path / "workspaces"
 
         mgr = WorkspaceManager()
         repo_dir = mgr.prepare(
             repo_url=str(origin),
             commit=sha,
-            run_id="local-run-002",
+            run_id="run-002",
+            base_dir=workspace_base,
+        )
+
+        # prepare() should return <base_dir>/<run_id>/repo
+        assert repo_dir == workspace_base / "run-002" / "repo"
+
+    def test_prepare_checks_out_correct_commit(
+        self, tmp_path: Path, local_repo: tuple[Path, str]
+    ) -> None:
+        origin, sha = local_repo
+        workspace_base = tmp_path / "workspaces"
+
+        mgr = WorkspaceManager()
+        repo_dir = mgr.prepare(
+            repo_url=str(origin),
+            commit=sha,
+            run_id="run-003",
             base_dir=workspace_base,
         )
 
@@ -365,18 +225,137 @@ class TestPrepareWithLocalRepo:
         )
         assert result.stdout.strip() == sha
 
-    def test_cleanup_removes_prepared_workspace(self, tmp_path: Path) -> None:
-        origin, sha = self._make_local_repo(tmp_path)
+    def test_prepare_creates_base_dir_if_missing(
+        self, tmp_path: Path, local_repo: tuple[Path, str]
+    ) -> None:
+        origin, sha = local_repo
+        base_dir = tmp_path / "nested" / "base"
+
+        mgr = WorkspaceManager()
+        mgr.prepare(
+            repo_url=str(origin),
+            commit=sha,
+            run_id="run-004",
+            base_dir=base_dir,
+        )
+
+        assert base_dir.exists()
+
+    def test_prepare_uses_temp_dir_when_base_dir_is_none(
+        self, local_repo: tuple[Path, str]
+    ) -> None:
+        origin, sha = local_repo
+
+        mgr = WorkspaceManager()
+        repo_dir = mgr.prepare(
+            repo_url=str(origin),
+            commit=sha,
+            run_id="run-005",
+        )
+
+        assert repo_dir.exists()
+        assert repo_dir.is_dir()
+
+    def test_prepare_uses_reference_when_cache_dir_provided(
+        self, tmp_path: Path, local_repo: tuple[Path, str]
+    ) -> None:
+        origin, sha = local_repo
+        cache_dir = tmp_path / "cache"
+        workspace_base = tmp_path / "workspaces"
+
+        mgr = WorkspaceManager(cache_dir=cache_dir)
+        repo_dir = mgr.prepare(
+            repo_url=str(origin),
+            commit=sha,
+            run_id="run-006",
+            base_dir=workspace_base,
+        )
+
+        # The cache directory should have been populated by ensure_cache
+        assert cache_dir.exists()
+        # The repo should still be cloned and checked out correctly
+        assert repo_dir.exists()
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert result.stdout.strip() == sha
+
+    def test_cleanup_removes_prepared_workspace(
+        self, tmp_path: Path, local_repo: tuple[Path, str]
+    ) -> None:
+        origin, sha = local_repo
         workspace_base = tmp_path / "workspaces"
 
         mgr = WorkspaceManager()
         repo_dir = mgr.prepare(
             repo_url=str(origin),
             commit=sha,
-            run_id="local-run-003",
+            run_id="run-007",
             base_dir=workspace_base,
         )
         assert repo_dir.exists()
 
         mgr.cleanup(repo_dir)
         assert not repo_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# ensure_cache — real git operations against a local repo
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _git_available(), reason="git not found")
+class TestEnsureCache:
+    def test_clones_bare_when_cache_missing(
+        self, tmp_path: Path, local_repo: tuple[Path, str]
+    ) -> None:
+        origin, _sha = local_repo
+        cache_dir = tmp_path / "cache"
+
+        result = ensure_cache(str(origin), cache_dir)
+
+        assert result.exists()
+        # A bare clone has HEAD and config files but no working tree
+        assert (result / "HEAD").exists()
+
+    def test_fetches_when_cache_exists(
+        self, tmp_path: Path, local_repo: tuple[Path, str]
+    ) -> None:
+        origin, _sha = local_repo
+        cache_dir = tmp_path / "cache"
+
+        # First call: clones
+        result_first = ensure_cache(str(origin), cache_dir)
+        assert result_first.exists()
+
+        # Second call: should fetch (not error) and return the same path
+        result_second = ensure_cache(str(origin), cache_dir)
+        assert result_second == result_first
+
+    def test_slug_strips_git_suffix(
+        self, tmp_path: Path, local_repo: tuple[Path, str]
+    ) -> None:
+        origin, _sha = local_repo
+        # Rename origin dir so its name ends in .git to test suffix stripping
+        origin_with_suffix = origin.parent / "myrepo.git"
+        origin.rename(origin_with_suffix)
+        cache_dir = tmp_path / "cache"
+
+        result = ensure_cache(str(origin_with_suffix), cache_dir)
+
+        assert result.name == "myrepo"
+        assert result == cache_dir / "myrepo"
+
+    def test_cache_dir_is_created_if_missing(
+        self, tmp_path: Path, local_repo: tuple[Path, str]
+    ) -> None:
+        origin, _sha = local_repo
+        cache_dir = tmp_path / "nonexistent" / "cache"
+
+        ensure_cache(str(origin), cache_dir)
+
+        assert cache_dir.exists()

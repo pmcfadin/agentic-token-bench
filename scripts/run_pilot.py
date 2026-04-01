@@ -1,7 +1,7 @@
 """scripts/run_pilot.py — Fixture-based pilot pipeline demonstration.
 
 Creates mock RunRecord fixtures for the ripgrep task family (2 tasks x 2 variants),
-generates a scorecard, and writes everything to benchmarks/results/pilot/.
+generates a scorecard, and writes everything to tests/fixtures/pilot_results/.
 
 Usage:
     uv run python scripts/run_pilot.py
@@ -21,7 +21,7 @@ from benchmarks.harness.reporting import (
     render_scorecard_markdown,
 )
 
-PILOT_RESULTS_DIR = Path("benchmarks/results/pilot")
+PILOT_RESULTS_DIR = Path("tests/fixtures/pilot_results")
 FIXTURES_DIR = Path("tests/fixtures/pilot_runs")
 PINNED_COMMIT = "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
 AGENT_ID = "ClaudeAdapter"

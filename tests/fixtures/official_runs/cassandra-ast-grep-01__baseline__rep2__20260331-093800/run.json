@@ -1,0 +1,22 @@
+{
+  "run_id": "cassandra-ast-grep-01__baseline__rep2__20260331-093800",
+  "task_id": "cassandra-ast-grep-01",
+  "family": "ast-grep",
+  "variant": "baseline",
+  "agent_id": "claude",
+  "adapter_version": "0.1.0",
+  "repo_commit": "0269fd5665751e8a6d8eab852e0f66c142b10ee6",
+  "status": "passed",
+  "validity": "valid",
+  "reported_input_tokens": 13704,
+  "reported_output_tokens": 3426,
+  "reported_total_tokens": 17130,
+  "elapsed_seconds": 51.8,
+  "repair_iterations": 0,
+  "validation_status": "passed",
+  "files_changed": 0,
+  "diff_size": 0,
+  "artifact_dir": "benchmarks/results/official/cassandra-ast-grep-01__baseline__rep2__20260331-093800",
+  "started_at": "2026-03-31T09:38:00+00:00",
+  "finished_at": "2026-03-31T09:38:51.800000+00:00"
+}

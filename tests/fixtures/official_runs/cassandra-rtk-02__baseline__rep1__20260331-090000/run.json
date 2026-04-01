@@ -1,0 +1,22 @@
+{
+  "run_id": "cassandra-rtk-02__baseline__rep1__20260331-090000",
+  "task_id": "cassandra-rtk-02",
+  "family": "rtk",
+  "variant": "baseline",
+  "agent_id": "claude",
+  "adapter_version": "0.1.0",
+  "repo_commit": "0269fd5665751e8a6d8eab852e0f66c142b10ee6",
+  "status": "passed",
+  "validity": "valid",
+  "reported_input_tokens": 15628,
+  "reported_output_tokens": 3908,
+  "reported_total_tokens": 19536,
+  "elapsed_seconds": 54.8,
+  "repair_iterations": 0,
+  "validation_status": "passed",
+  "files_changed": 0,
+  "diff_size": 0,
+  "artifact_dir": "benchmarks/results/official/cassandra-rtk-02__baseline__rep1__20260331-090000",
+  "started_at": "2026-03-31T09:00:00+00:00",
+  "finished_at": "2026-03-31T09:00:54.800000+00:00"
+}

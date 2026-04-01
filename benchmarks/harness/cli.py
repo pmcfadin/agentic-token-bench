@@ -147,10 +147,54 @@ def run_task(
 def run_family(
     family: str = typer.Argument(help="Tool family to run"),
     agent: str = typer.Option(help="Agent ID"),
+    tasks_dir: str = typer.Option(
+        default="benchmarks/tasks/cassandra/official",
+        help="Directory containing task YAML manifests",
+    ),
+    results_dir: str = typer.Option(default="benchmarks/results", help="Results directory"),
 ) -> None:
-    """Run all tasks for a tool family."""
-    typer.echo(f"run-family: not yet implemented (family={family}, agent={agent})")
-    raise typer.Exit(1)
+    """Run all tasks for a tool family (both baseline and tool_variant)."""
+    import tempfile
+
+    from benchmarks.harness.models import TaskManifest
+    from benchmarks.harness.runner import BenchmarkRunner
+
+    try:
+        adapter = _build_adapter(agent)
+    except typer.BadParameter as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+
+    tasks_path = Path(tasks_dir)
+    task_files = sorted(tasks_path.glob("*.yaml"))
+    manifests = []
+    for tf in task_files:
+        try:
+            raw = yaml.safe_load(tf.read_text(encoding="utf-8"))
+            m = TaskManifest.model_validate(raw)
+            if m.family == family:
+                manifests.append(m)
+        except Exception:  # noqa: BLE001
+            pass
+
+    if not manifests:
+        typer.echo(f"run-family: no tasks found for family '{family}'", err=True)
+        raise typer.Exit(1)
+
+    runner = BenchmarkRunner(results_dir=Path(results_dir))
+    typer.echo(f"run-family: {len(manifests)} tasks for {family}, agent={agent}")
+
+    for manifest in manifests:
+        for variant in ("baseline", "tool_variant"):
+            ws = Path(tempfile.mkdtemp())
+            try:
+                record = runner.run_task(task=manifest, adapter=adapter, variant=variant, workspace=ws)
+                typer.echo(
+                    f"  {record.run_id}  {variant}  tokens={record.reported_total_tokens}"
+                    f"  status={record.status.value}"
+                )
+            except Exception as exc:  # noqa: BLE001
+                typer.echo(f"  FAILED {manifest.task_id} {variant}: {exc}", err=True)
 
 
 @app.command()
@@ -208,13 +252,36 @@ def run_suite(
     if list_only:
         return
 
-    typer.echo(
-        "run-suite: full execution not yet implemented."
-        "  Use 'atb run-task' for individual runs or"
-        " 'uv run scripts/generate_fixture_runs.py' for fixture generation.",
-        err=True,
-    )
-    raise typer.Exit(1)
+    import tempfile
+
+    from benchmarks.harness.runner import BenchmarkRunner
+
+    try:
+        adapter = _build_adapter(agent)
+    except typer.BadParameter as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+
+    runner = BenchmarkRunner(results_dir=_RESULTS_DIR)
+    total = len(manifests) * 2  # baseline + tool_variant per task
+    completed = 0
+
+    for manifest in manifests:
+        for variant in ("baseline", "tool_variant"):
+            ws = Path(tempfile.mkdtemp())
+            try:
+                record = runner.run_task(task=manifest, adapter=adapter, variant=variant, workspace=ws)
+                completed += 1
+                typer.echo(
+                    f"  [{completed}/{total}] {record.run_id}"
+                    f"  {variant}  tokens={record.reported_total_tokens}"
+                    f"  status={record.status.value}"
+                )
+            except Exception as exc:  # noqa: BLE001
+                completed += 1
+                typer.echo(f"  [{completed}/{total}] FAILED {manifest.task_id} {variant}: {exc}", err=True)
+
+    typer.echo(f"run-suite: completed {completed}/{total} runs")
 
 
 @app.command()
@@ -271,10 +338,57 @@ def generate_scorecard(
 
 
 @app.command()
-def validate_schemas() -> None:
+def validate_schemas(
+    tasks_dir: str = typer.Option(
+        default="benchmarks/tasks/cassandra/official",
+        help="Directory containing task YAML manifests",
+    ),
+    results_dir: str = typer.Option(default="benchmarks/results", help="Results directory"),
+) -> None:
     """Validate all task and run manifests against JSON schemas."""
-    typer.echo("validate-schemas: not yet implemented")
-    raise typer.Exit(1)
+    import jsonschema
+
+    schemas_dir = Path("schemas")
+    errors = 0
+
+    # Validate task manifests
+    task_schema_path = schemas_dir / "task.schema.json"
+    if task_schema_path.exists():
+        task_schema = json.loads(task_schema_path.read_text())
+        tasks_path = Path(tasks_dir)
+        for task_file in sorted(tasks_path.glob("*.yaml")):
+            try:
+                raw = yaml.safe_load(task_file.read_text(encoding="utf-8"))
+                jsonschema.validate(raw, task_schema)
+                typer.echo(f"  PASS  {task_file.name}")
+            except jsonschema.ValidationError as exc:
+                typer.echo(f"  FAIL  {task_file.name}: {exc.message}", err=True)
+                errors += 1
+            except Exception as exc:  # noqa: BLE001
+                typer.echo(f"  ERROR {task_file.name}: {exc}", err=True)
+                errors += 1
+
+    # Validate run records
+    run_schema_path = schemas_dir / "run.schema.json"
+    results_path = Path(results_dir)
+    if run_schema_path.exists() and results_path.exists():
+        run_schema = json.loads(run_schema_path.read_text())
+        for run_file in sorted(results_path.rglob("run.json")):
+            try:
+                raw = json.loads(run_file.read_text())
+                jsonschema.validate(raw, run_schema)
+                typer.echo(f"  PASS  {run_file}")
+            except jsonschema.ValidationError as exc:
+                typer.echo(f"  FAIL  {run_file}: {exc.message}", err=True)
+                errors += 1
+            except Exception as exc:  # noqa: BLE001
+                typer.echo(f"  ERROR {run_file}: {exc}", err=True)
+                errors += 1
+
+    if errors:
+        typer.echo(f"validate-schemas: {errors} error(s) found", err=True)
+        raise typer.Exit(1)
+    typer.echo("validate-schemas: all valid")
 
 
 if __name__ == "__main__":

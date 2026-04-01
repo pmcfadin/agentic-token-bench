@@ -1,0 +1,22 @@
+{
+  "run_id": "cassandra-comby-01__tool_variant__rep2__20260331-100800",
+  "task_id": "cassandra-comby-01",
+  "family": "comby",
+  "variant": "tool_variant",
+  "agent_id": "claude",
+  "adapter_version": "0.1.0",
+  "repo_commit": "0269fd5665751e8a6d8eab852e0f66c142b10ee6",
+  "status": "passed",
+  "validity": "valid",
+  "reported_input_tokens": 6340,
+  "reported_output_tokens": 1586,
+  "reported_total_tokens": 7926,
+  "elapsed_seconds": 24.8,
+  "repair_iterations": 0,
+  "validation_status": "passed",
+  "files_changed": 0,
+  "diff_size": 0,
+  "artifact_dir": "benchmarks/results/official/cassandra-comby-01__tool_variant__rep2__20260331-100800",
+  "started_at": "2026-03-31T10:08:00+00:00",
+  "finished_at": "2026-03-31T10:08:24.800000+00:00"
+}

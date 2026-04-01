@@ -23,9 +23,10 @@ def ensure_cache(repo_url: str, cache_dir: Path) -> Path:
     cached = cache_dir / slug
 
     if cached.exists():
-        # Update the existing cache with the latest refs
+        # Update the existing cache — use the URL directly since bare clones
+        # may not have a configured remote.
         subprocess.run(
-            ["git", "fetch", "--prune", "origin"],
+            ["git", "fetch", repo_url, "+refs/heads/*:refs/heads/*"],
             cwd=cached,
             check=True,
             capture_output=True,

@@ -1,0 +1,11 @@
+{
+  "agent_id": "gemini-cli",
+  "adapter_version": "0.1.0",
+  "qualified": true,
+  "reported_token_support": true,
+  "forced_tool_support": true,
+  "trace_support": true,
+  "run_completion_support": true,
+  "failure_reason": null,
+  "evidence_paths": []
+}

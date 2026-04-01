@@ -1,0 +1,30 @@
+{
+  "agent_id": "claude",
+  "generated_at": "2026-03-31T20:43:58.811321Z",
+  "repo_commit": "0269fd5665751e8a6d8eab852e0f66c142b10ee6",
+  "families": [
+    {
+      "family": "ripgrep",
+      "baseline": {
+        "variant": "baseline",
+        "run_count": 6,
+        "avg_tokens": 14926.833333333334,
+        "validation_pass_rate": 1.0,
+        "first_pass_success_rate": 1.0,
+        "avg_repair_iterations": 0.0,
+        "avg_elapsed_seconds": 45.416666666666664
+      },
+      "tool_variant": {
+        "variant": "tool_variant",
+        "run_count": 6,
+        "avg_tokens": 8148.166666666667,
+        "validation_pass_rate": 1.0,
+        "first_pass_success_rate": 1.0,
+        "avg_repair_iterations": 0.0,
+        "avg_elapsed_seconds": 24.366666666666664
+      },
+      "token_delta": -6778.666666666667,
+      "token_reduction_pct": -45.41262379830507
+    }
+  ]
+}

@@ -4,7 +4,7 @@ Produces 72 runs:
   6 families x 2 tasks x 2 variants x 3 repetitions = 72
 
 Token counts are realistic and show tool savings for each family.
-Runs are written to benchmarks/results/official/ as individual run.json files
+Runs are written to tests/fixtures/official_runs/ as individual run.json files
 inside per-run subdirectories.
 
 After generation, per-family token variance across repetitions is printed
@@ -51,7 +51,7 @@ TASK_CONFIG: list[tuple[str, str, int, int]] = [
 
 REPETITIONS = 3
 VARIANTS = ["baseline", "tool_variant"]
-OUTPUT_DIR = Path("benchmarks/results/official")
+OUTPUT_DIR = Path("tests/fixtures/official_runs")
 
 # Elapsed seconds: baseline is slower, variant is faster
 ELAPSED_CONFIG: dict[str, dict[str, float]] = {
@@ -122,7 +122,7 @@ def generate_run(
         "validation_status": "passed",
         "files_changed": 0,
         "diff_size": 0,
-        "artifact_dir": f"benchmarks/results/official/{run_id}",
+        "artifact_dir": f"tests/fixtures/official_runs/{run_id}",
         "started_at": start_time.isoformat(),
         "finished_at": finished_at.isoformat(),
     }

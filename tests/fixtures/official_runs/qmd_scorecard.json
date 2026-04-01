@@ -1,0 +1,30 @@
+{
+  "agent_id": "claude",
+  "generated_at": "2026-03-31T20:43:58.811012Z",
+  "repo_commit": "0269fd5665751e8a6d8eab852e0f66c142b10ee6",
+  "families": [
+    {
+      "family": "qmd",
+      "baseline": {
+        "variant": "baseline",
+        "run_count": 6,
+        "avg_tokens": 20541.666666666668,
+        "validation_pass_rate": 1.0,
+        "first_pass_success_rate": 1.0,
+        "avg_repair_iterations": 0.0,
+        "avg_elapsed_seconds": 59.28333333333333
+      },
+      "tool_variant": {
+        "variant": "tool_variant",
+        "run_count": 6,
+        "avg_tokens": 8898.5,
+        "validation_pass_rate": 1.0,
+        "first_pass_success_rate": 1.0,
+        "avg_repair_iterations": 0.0,
+        "avg_elapsed_seconds": 28.016666666666666
+      },
+      "token_delta": -11643.166666666668,
+      "token_reduction_pct": -56.68073022312373
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "run_id": "cassandra-qmd-01__tool_variant__rep1__20260331-083000",
+  "task_id": "cassandra-qmd-01",
+  "family": "qmd",
+  "variant": "tool_variant",
+  "agent_id": "claude",
+  "adapter_version": "0.1.0",
+  "repo_commit": "0269fd5665751e8a6d8eab852e0f66c142b10ee6",
+  "status": "passed",
+  "validity": "valid",
+  "reported_input_tokens": 7531,
+  "reported_output_tokens": 1883,
+  "reported_total_tokens": 9414,
+  "elapsed_seconds": 28.6,
+  "repair_iterations": 0,
+  "validation_status": "passed",
+  "files_changed": 0,
+  "diff_size": 0,
+  "artifact_dir": "benchmarks/results/official/cassandra-qmd-01__tool_variant__rep1__20260331-083000",
+  "started_at": "2026-03-31T08:30:00+00:00",
+  "finished_at": "2026-03-31T08:30:28.600000+00:00"
+}

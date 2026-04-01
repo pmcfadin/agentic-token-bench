@@ -1,0 +1,11 @@
+{
+  "agent_id": "claude",
+  "adapter_version": "0.1.0",
+  "qualified": false,
+  "reported_token_support": true,
+  "forced_tool_support": true,
+  "trace_support": false,
+  "run_completion_support": true,
+  "failure_reason": "probe_no_tool_step: no-tool step exited with non-zero status: 1. stderr=''",
+  "evidence_paths": []
+}

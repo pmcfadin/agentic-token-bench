@@ -1,0 +1,22 @@
+{
+  "run_id": "cassandra-fastmod-02__baseline__rep3__20260331-092800",
+  "task_id": "cassandra-fastmod-02",
+  "family": "fastmod",
+  "variant": "baseline",
+  "agent_id": "claude",
+  "adapter_version": "0.1.0",
+  "repo_commit": "0269fd5665751e8a6d8eab852e0f66c142b10ee6",
+  "status": "passed",
+  "validity": "valid",
+  "reported_input_tokens": 9085,
+  "reported_output_tokens": 2272,
+  "reported_total_tokens": 11357,
+  "elapsed_seconds": 36.3,
+  "repair_iterations": 0,
+  "validation_status": "passed",
+  "files_changed": 0,
+  "diff_size": 0,
+  "artifact_dir": "benchmarks/results/official/cassandra-fastmod-02__baseline__rep3__20260331-092800",
+  "started_at": "2026-03-31T09:28:00+00:00",
+  "finished_at": "2026-03-31T09:28:36.300000+00:00"
+}
