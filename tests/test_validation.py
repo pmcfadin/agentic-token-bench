@@ -32,10 +32,17 @@ class TestRunValidationCommand:
         assert result.command == "false"
 
     def test_failing_command_nonzero_exit_code(self, tmp_cwd: Path) -> None:
-        # Use a command that exits with a known non-zero code
-        result = run_validation_command("sh -c 'exit 2'", cwd=tmp_cwd)
+        # Use a command that exits with a known non-zero code (not 2, which is partial pass)
+        result = run_validation_command("sh -c 'exit 3'", cwd=tmp_cwd)
 
         assert result.status == ValidationStatus.failed
+        assert result.exit_code == 3
+
+    def test_partial_pass_exit_code_2_is_passed(self, tmp_cwd: Path) -> None:
+        # Exit code 2 means partial pass — still counts as valid
+        result = run_validation_command("sh -c 'exit 2'", cwd=tmp_cwd)
+
+        assert result.status == ValidationStatus.passed
         assert result.exit_code == 2
 
     def test_stdout_and_stderr_captured(self, tmp_cwd: Path) -> None:

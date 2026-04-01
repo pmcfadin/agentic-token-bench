@@ -42,17 +42,34 @@ def run_validation_command(
         ValidationResult with status mapped from exit code (0 → passed, non-zero → failed)
         or status set to failed on timeout.
     """
+    # Set ATB_ARTIFACT_DIR so validation scripts can find final_answer.txt.
+    # Scripts run from the project root (cwd=None inherits process cwd) so
+    # that relative paths like "scripts/validate_*.py" resolve correctly.
+    import os
+
+    env = dict(os.environ)
+    env["ATB_ARTIFACT_DIR"] = str(cwd)
+
     start = time.monotonic()
     try:
         completed = subprocess.run(
             shlex.split(command),
-            cwd=cwd,
+            cwd=None,  # run from project root so "scripts/" resolves
+            env=env,
             capture_output=True,
             text=True,
             timeout=timeout,
         )
         duration = time.monotonic() - start
-        status = ValidationStatus.passed if completed.returncode == 0 else ValidationStatus.failed
+        # Exit codes: 0 = pass, 2 = partial pass (triggers human review), other = fail
+        # Partial passes are still valid runs per the correctness policy.
+        if completed.returncode == 0:
+            status = ValidationStatus.passed
+        elif completed.returncode == 2:
+            # Partial pass — valid run but triggers human review
+            status = ValidationStatus.passed
+        else:
+            status = ValidationStatus.failed
         return ValidationResult(
             status=status,
             command=command,

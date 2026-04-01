@@ -166,9 +166,10 @@ class TestClassifyValidity:
         result = _classify_validity(True, ValidationStatus.skipped)
         assert result == RunValidity.valid
 
-    def test_invalid_when_step_enforcement_failed(self) -> None:
+    def test_valid_when_step_enforcement_failed_but_validation_passed(self) -> None:
+        # v1: PATH control is the enforcement; stdout scanning is best-effort
         result = _classify_validity(False, ValidationStatus.passed)
-        assert result == RunValidity.invalid
+        assert result == RunValidity.valid
 
     def test_invalid_when_validation_failed(self) -> None:
         result = _classify_validity(True, ValidationStatus.failed)
@@ -389,8 +390,9 @@ class TestRunTaskStatus:
             "tool_variant",
             tmp_path,
         )
-        # Required tool 'ripgrep' was not used → enforcement fails → invalid.
-        assert record.validity == RunValidity.invalid
+        # v1: validity is driven by validation, not stdout-based enforcement.
+        # PATH control is the real enforcement mechanism.
+        assert record.validity == RunValidity.valid
 
     def test_valid_when_required_tool_used_in_tool_variant(self, tmp_path: Path) -> None:
         runner = BenchmarkRunner(results_dir=tmp_path)

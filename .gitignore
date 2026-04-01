@@ -30,3 +30,4 @@ Thumbs.db
 benchmarks/results/
 benchmarks/repos/cassandra/checkout/
 *.log
+.cache/

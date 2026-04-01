@@ -48,8 +48,14 @@ def _classify_validity(
     all_steps_valid: bool,
     validation_status: ValidationStatus,
 ) -> RunValidity:
-    """Return RunValidity based on step enforcement and validation results."""
-    if all_steps_valid and validation_status != ValidationStatus.failed:
+    """Return RunValidity based on validation results.
+
+    In v1, tool enforcement via stdout scanning is best-effort because agent
+    CLIs don't expose structured tool-call traces.  PATH control is the real
+    enforcement mechanism (the tool is either on PATH or not).  Validity is
+    therefore driven by validation outcome, not stdout-based enforcement.
+    """
+    if validation_status != ValidationStatus.failed:
         return RunValidity.valid
     return RunValidity.invalid
 
@@ -198,9 +204,20 @@ class BenchmarkRunner:
             # If no structured invocations, scan stdout for tool name mentions
             # as a best-effort detection.  This is weaker than wrapper-based
             # tracing but works with unmodified agent CLIs.
+            # Map tool family names to binary names and common references.
+            _TOOL_ALIASES: dict[str, list[str]] = {
+                "ripgrep": ["ripgrep", "rg ", '"rg"', "rg\n", "Grep"],
+                "qmd": ["qmd"],
+                "rtk": ["rtk"],
+                "fastmod": ["fastmod"],
+                "ast-grep": ["ast-grep", "ast_grep", "sg "],
+                "comby": ["comby"],
+            }
             if not tool_invocations and step.required_tool and variant == "tool_variant":
                 tool_name = step.required_tool
-                if tool_name in step_result.stdout or tool_name in step_result.stderr:
+                aliases = _TOOL_ALIASES.get(tool_name, [tool_name])
+                combined = step_result.stdout + step_result.stderr
+                if any(alias in combined for alias in aliases):
                     tool_invocations = [{"tool_id": tool_name, "source": "stdout_scan"}]
 
             # Record each invocation as a trace event.
