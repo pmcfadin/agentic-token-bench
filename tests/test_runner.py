@@ -37,6 +37,7 @@ class MockAdapter(AgentAdapter):
         reported_output: int = 100,
         reported_total: int = 150,
         raise_on_step: bool = False,
+        stdout: str = "done",
     ) -> None:
         self._exit_status = exit_status
         self._tool_invocations = tool_invocations or []
@@ -44,6 +45,7 @@ class MockAdapter(AgentAdapter):
         self._reported_output = reported_output
         self._reported_total = reported_total
         self._raise_on_step = raise_on_step
+        self._stdout = stdout
 
     def probe(self) -> QualificationResult:
         return QualificationResult(
@@ -64,7 +66,7 @@ class MockAdapter(AgentAdapter):
         if self._raise_on_step:
             raise RuntimeError("Simulated adapter failure")
         return StepResult(
-            stdout="done",
+            stdout=self._stdout,
             stderr="",
             exit_status=self._exit_status,
             step_metadata={"finish_reason": "stop"},
@@ -288,6 +290,43 @@ class TestRunTaskArtifacts:
         trace = Path(record.artifact_dir) / "trace.jsonl"
         assert trace.exists()
         assert trace.stat().st_size > 0
+
+    def test_final_answer_txt_written(self, tmp_path: Path) -> None:
+        runner = BenchmarkRunner(results_dir=tmp_path)
+        record = runner.run_task(_make_task(), MockAdapter(stdout="done"), "baseline", tmp_path)
+        final_answer = Path(record.artifact_dir) / "final_answer.txt"
+        assert final_answer.exists()
+
+    def test_final_answer_uses_raw_stdout_when_not_json(self, tmp_path: Path) -> None:
+        runner = BenchmarkRunner(results_dir=tmp_path)
+        record = runner.run_task(
+            _make_task(), MockAdapter(stdout="my plain answer"), "baseline", tmp_path
+        )
+        final_answer = Path(record.artifact_dir) / "final_answer.txt"
+        assert final_answer.read_text(encoding="utf-8") == "my plain answer"
+
+    def test_final_answer_extracts_result_field_from_json_stdout(self, tmp_path: Path) -> None:
+        json_stdout = json.dumps(
+            {"type": "result", "subtype": "success", "result": "The extracted answer text."}
+        )
+        runner = BenchmarkRunner(results_dir=tmp_path)
+        record = runner.run_task(
+            _make_task(), MockAdapter(stdout=json_stdout), "baseline", tmp_path
+        )
+        final_answer = Path(record.artifact_dir) / "final_answer.txt"
+        assert final_answer.read_text(encoding="utf-8") == "The extracted answer text."
+
+    def test_final_answer_falls_back_to_full_json_when_no_result_field(
+        self, tmp_path: Path
+    ) -> None:
+        json_stdout = json.dumps({"type": "result", "other_field": "value"})
+        runner = BenchmarkRunner(results_dir=tmp_path)
+        record = runner.run_task(
+            _make_task(), MockAdapter(stdout=json_stdout), "baseline", tmp_path
+        )
+        final_answer = Path(record.artifact_dir) / "final_answer.txt"
+        # No "result" key → falls back to raw stdout
+        assert final_answer.read_text(encoding="utf-8") == json_stdout
 
 
 # ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@ from pathlib import Path
 from agents.base import AgentAdapter
 from benchmarks.harness.artifacts import (
     create_artifact_dir,
+    write_final_answer,
     write_prompt,
     write_run_record,
 )
@@ -232,8 +233,23 @@ class BenchmarkRunner:
             if step_result.exit_status != 0 and run_status == RunStatus.passed:
                 run_status = RunStatus.failed
 
+        # --- post-step: extract and write final answer ---
+        if last_step_result is not None:
+            stdout = last_step_result.stdout or ""
+            answer_text: str
+            try:
+                import json as _json
+
+                parsed = _json.loads(stdout)
+                answer_text = parsed.get("result", stdout)
+                if not isinstance(answer_text, str):
+                    answer_text = stdout
+            except Exception:  # noqa: BLE001
+                answer_text = stdout
+            write_final_answer(artifact_dir, answer_text)
+
         # --- post-step: run validation commands ---
-        validation_results = run_all_validations(task.validation_commands, workspace)
+        validation_results = run_all_validations(task.validation_commands, artifact_dir)
 
         if not validation_results:
             validation_status = ValidationStatus.skipped

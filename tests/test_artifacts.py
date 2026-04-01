@@ -9,6 +9,7 @@ from pathlib import Path
 from benchmarks.harness.artifacts import (
     create_artifact_dir,
     write_diff,
+    write_final_answer,
     write_prompt,
     write_run_record,
 )
@@ -172,3 +173,29 @@ class TestWriteDiff:
     def test_empty_diff(self, tmp_path: Path) -> None:
         path = write_diff(tmp_path, "")
         assert path.read_text(encoding="utf-8") == ""
+
+
+# ---------------------------------------------------------------------------
+# write_final_answer
+# ---------------------------------------------------------------------------
+
+
+class TestWriteFinalAnswer:
+    def test_creates_final_answer_txt(self, tmp_path: Path) -> None:
+        path = write_final_answer(tmp_path, "The answer is 42.")
+        assert path == tmp_path / "final_answer.txt"
+        assert path.exists()
+
+    def test_content_matches(self, tmp_path: Path) -> None:
+        content = "source_path: src/ReadRepair.java\nconfig_path: conf/cassandra.yaml\n"
+        path = write_final_answer(tmp_path, content)
+        assert path.read_text(encoding="utf-8") == content
+
+    def test_empty_content(self, tmp_path: Path) -> None:
+        path = write_final_answer(tmp_path, "")
+        assert path.read_text(encoding="utf-8") == ""
+
+    def test_overwrites_existing_file(self, tmp_path: Path) -> None:
+        write_final_answer(tmp_path, "first write")
+        path = write_final_answer(tmp_path, "second write")
+        assert path.read_text(encoding="utf-8") == "second write"

@@ -10,6 +10,7 @@ __all__ = [
     "write_run_record",
     "write_prompt",
     "write_diff",
+    "write_final_answer",
 ]
 
 from pathlib import Path
@@ -78,3 +79,18 @@ def write_diff(artifact_dir: Path, diff: str) -> Path:
     diff_file = artifact_dir / "diff.patch"
     diff_file.write_text(diff, encoding="utf-8")
     return diff_file
+
+
+def write_final_answer(artifact_dir: Path, content: str) -> Path:
+    """Write the agent's final answer to ``final_answer.txt`` inside *artifact_dir*.
+
+    Args:
+        artifact_dir: Directory in which to write ``final_answer.txt``.
+        content: The agent's final answer text.
+
+    Returns:
+        Path to the written ``final_answer.txt`` file.
+    """
+    path = artifact_dir / "final_answer.txt"
+    path.write_text(content, encoding="utf-8")
+    return path
