@@ -28,6 +28,26 @@ Six CLI tools benchmarked against Apache Cassandra. All runs are deterministic �
 
 ---
 
+## Using the Tools
+
+The numbers above are real. Here's how to put them to work.
+
+**Before/after example — ripgrep:**
+```
+Without ripgrep: read every file in the directory → 1,043 tokens
+With ripgrep:    rg -l read_repair_chance .       →    48 tokens   (95.4% reduction)
+```
+
+The LLM sees a list of file paths instead of every file's content. Same answer, 95% fewer tokens.
+
+| Resource | What's inside |
+|----------|--------------|
+| [`docs/integration-guide.md`](docs/integration-guide.md) | All 6 tools: use cases, copy-paste commands, Claude Code / Codex / Gemini CLI setup |
+| [`docs/agent-configs/`](docs/agent-configs/) | Paste-ready CLAUDE.md snippets, Codex PATH config, Gemini stream-json extraction |
+| [`docs/agent-configs/README.md`](docs/agent-configs/README.md) | Quick-start and tool selection guide |
+
+---
+
 ## The Pattern
 
 The core idea: run a deterministic CLI tool first, LLM sees only the result.
@@ -224,6 +244,8 @@ uv run atb generate-layered-html-report
 
 Key docs:
 
+- [`docs/integration-guide.md`](docs/integration-guide.md) — how to use each tool with Claude Code, Codex, and Gemini CLI
+- [`docs/agent-configs/`](docs/agent-configs/) — paste-ready CLAUDE.md snippets and agent-specific configs
 - [`docs/methodology.md`](docs/methodology.md) — full v2 methodology spec
 - [`docs/findings.md`](docs/findings.md) — v1 findings (ripgrep family, live agent runs)
 - [`docs/redesign.md`](docs/redesign.md) — v2 design rationale and implementation plan
