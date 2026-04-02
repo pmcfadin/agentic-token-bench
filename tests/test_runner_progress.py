@@ -10,7 +10,8 @@ from benchmarks.harness.models import (
     TaskManifest,
     TaskStep,
 )
-from benchmarks.harness.runner import BenchmarkRunner
+from benchmarks.harness.models import ValidationStatus
+from benchmarks.harness.runner import BenchmarkRunner, _classify_validity
 
 
 class _FakeAdapter(AgentAdapter):
@@ -98,3 +99,44 @@ def test_run_task_emits_progress_messages(tmp_path: Path) -> None:
     assert any("step discover: invoking _FakeAdapter" in msg for msg in messages)
     assert any("run-task: no validation commands defined" in msg for msg in messages)
     assert any("run-task: finished status=passed validity=valid tokens=3" in msg for msg in messages)
+
+
+# ---------------------------------------------------------------------------
+# _classify_validity unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_classify_validity_valid_tokens_passed() -> None:
+    """validation=passed with positive tokens → valid."""
+    result = _classify_validity(True, ValidationStatus.passed, 1000)
+    assert result.value == "valid"
+
+
+def test_classify_validity_zero_tokens_is_invalid() -> None:
+    """validation=passed but tokens=0 → invalid (token reporting required)."""
+    result = _classify_validity(True, ValidationStatus.passed, 0)
+    assert result.value == "invalid"
+
+
+def test_classify_validity_none_tokens_is_invalid() -> None:
+    """validation=passed but tokens=None → invalid (token reporting required)."""
+    result = _classify_validity(True, ValidationStatus.passed, None)
+    assert result.value == "invalid"
+
+
+def test_classify_validity_failed_validation_is_invalid() -> None:
+    """validation=failed → invalid even with positive tokens."""
+    result = _classify_validity(True, ValidationStatus.failed, 500)
+    assert result.value == "invalid"
+
+
+def test_classify_validity_skipped_validation_with_tokens() -> None:
+    """validation=skipped with positive tokens → valid."""
+    result = _classify_validity(True, ValidationStatus.skipped, 200)
+    assert result.value == "valid"
+
+
+def test_classify_validity_skipped_validation_zero_tokens() -> None:
+    """validation=skipped but tokens=0 → invalid."""
+    result = _classify_validity(True, ValidationStatus.skipped, 0)
+    assert result.value == "invalid"

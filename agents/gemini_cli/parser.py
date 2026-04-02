@@ -31,6 +31,7 @@ def parse_gemini_output(output: str) -> dict:
         "stats": {},
         "status": "unknown",
         "result_line": "",
+        "has_result_line": False,
     }
 
     content_parts: list[str] = []
@@ -54,6 +55,7 @@ def parse_gemini_output(output: str) -> dict:
             result["status"] = obj.get("status", "unknown")
             result["stats"] = obj.get("stats", {})
             result_line_raw = line
+            result["has_result_line"] = True
 
     result["content"] = "".join(content_parts)
     result["result_line"] = result_line_raw

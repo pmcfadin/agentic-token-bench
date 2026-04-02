@@ -108,12 +108,30 @@ def test_parse_stream_json_result_line_raw() -> None:
     assert '"status":"success"' in result["result_line"]
 
 
+def test_parse_stream_json_has_result_line_true() -> None:
+    """parse_gemini_output sets has_result_line=True when a result line is present."""
+    result = parse_gemini_output(_STREAM_JSON_SUCCESS)
+    assert result["has_result_line"] is True
+
+
 def test_parse_stream_json_no_result_line() -> None:
     """parse_gemini_output returns empty stats when no result line is present."""
     result = parse_gemini_output(_STREAM_JSON_NO_TOKENS)
     assert result["stats"] == {}
     assert result["result_line"] == ""
     assert result["status"] == "unknown"
+
+
+def test_parse_stream_json_no_result_line_flag_false() -> None:
+    """parse_gemini_output sets has_result_line=False when no result line is present."""
+    result = parse_gemini_output(_STREAM_JSON_NO_TOKENS)
+    assert result["has_result_line"] is False
+
+
+def test_parse_plain_text_no_result_line_flag_false() -> None:
+    """parse_gemini_output sets has_result_line=False for plain text output."""
+    result = parse_gemini_output(_PLAIN_TEXT_OUTPUT)
+    assert result["has_result_line"] is False
 
 
 def test_parse_plain_text_output() -> None:

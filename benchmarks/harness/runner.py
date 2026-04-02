@@ -49,17 +49,23 @@ def _generate_run_id(task_id: str, variant: str, started_at: datetime) -> str:
 def _classify_validity(
     all_steps_valid: bool,
     validation_status: ValidationStatus,
+    reported_total_tokens: int | None = None,
 ) -> RunValidity:
-    """Return RunValidity based on validation results.
+    """Return RunValidity based on validation results and token reporting.
 
     In v1, tool enforcement via stdout scanning is best-effort because agent
     CLIs don't expose structured tool-call traces.  PATH control is the real
     enforcement mechanism (the tool is either on PATH or not).  Validity is
     therefore driven by validation outcome, not stdout-based enforcement.
+
+    A run is also invalid when reported_total_tokens is 0 or None — the
+    benchmark contract requires actual token counts to be present.
     """
-    if validation_status != ValidationStatus.failed:
-        return RunValidity.valid
-    return RunValidity.invalid
+    if validation_status == ValidationStatus.failed:
+        return RunValidity.invalid
+    if not reported_total_tokens:  # catches 0 and None
+        return RunValidity.invalid
+    return RunValidity.valid
 
 
 class BenchmarkRunner:
@@ -358,7 +364,7 @@ class BenchmarkRunner:
                 _emit("run-task: could not extract reported tokens")
 
         # --- classify run validity ---
-        validity = _classify_validity(all_steps_enforcement_valid, validation_status)
+        validity = _classify_validity(all_steps_enforcement_valid, validation_status, reported_total)
 
         finished_at = datetime.now(tz=timezone.utc)
         elapsed = (finished_at - started_at).total_seconds()
