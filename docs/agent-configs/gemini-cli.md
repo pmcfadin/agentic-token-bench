@@ -1,4 +1,32 @@
-# Gemini CLI — stream-json Token Reporting and Tool Config
+# Gemini CLI — Setup, stream-json Token Reporting, and Tool Config
+
+## Setup
+
+**Install:**
+```bash
+npm install -g @google/gemini-cli
+# or: https://github.com/google-gemini/gemini-cli for binary releases
+```
+
+**Verify:**
+```bash
+gemini --version
+gemini -p "hello" --output-format stream-json
+```
+
+**Authenticate:**  
+Gemini CLI uses Google AI credentials. The simplest path:
+```bash
+gemini auth login
+# follows browser OAuth flow, stores credentials locally
+```
+
+Or set an API key directly:
+```bash
+export GEMINI_API_KEY="..."
+```
+
+---
 
 Gemini CLI streams JSON events to stdout when run with `--output-format stream-json`. This guide covers how token counts are reported, the edge case when the result line is absent (see [#46](https://github.com/pmcfadin/agentic-token-bench/issues/46)), and how to configure tool access.
 

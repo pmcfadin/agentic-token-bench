@@ -1,8 +1,32 @@
-# Claude Code — CLAUDE.md Snippets for All 6 Tools
+# Claude Code — Setup and CLAUDE.md Snippets for All 6 Tools
 
-Paste any or all of these sections into your project's `CLAUDE.md`. Claude Code reads this file at session start; each snippet tells Claude *when* to reach for the tool automatically, not just that the tool exists.
+## Setup
 
-Model: [`/Users/patrickmcfadin/.claude/RTK.md`](../../../../.claude/RTK.md) — concrete commands, expected output shape, warning callouts.
+**Install:**
+```bash
+npm install -g @anthropic-ai/claude-code
+# or: download from https://claude.ai/code
+```
+
+**Verify:**
+```bash
+claude --version
+claude -p "hello" --output-format json
+```
+
+**How CLAUDE.md works:**  
+Claude Code reads `CLAUDE.md` at the start of every session. Paste tool snippets into your project's `CLAUDE.md` (or `~/.claude/CLAUDE.md` for global config) and Claude will follow the rules automatically — no need to instruct it per-prompt.
+
+Create or open the file:
+```bash
+# Project-level (checked into the repo)
+touch CLAUDE.md
+
+# Global (applies to all projects)
+touch ~/.claude/CLAUDE.md
+```
+
+Then paste any of the sections below.
 
 ---
 

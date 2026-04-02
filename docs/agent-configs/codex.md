@@ -1,4 +1,28 @@
-# Codex — PATH Config and System Prompt for Token-Saving Tools
+# Codex — Setup, PATH Config, and System Prompt for Token-Saving Tools
+
+## Setup
+
+**Install:**
+```bash
+npm install -g @openai/codex
+# or: https://github.com/openai/codex for binary releases
+```
+
+**Verify:**
+```bash
+codex --version
+codex exec --full-auto --json --ephemeral --skip-git-repo-check -p "echo hello"
+```
+
+**Authenticate:**  
+Codex reads `OPENAI_API_KEY` from the environment:
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+Or add it to your shell profile (`~/.zshrc`, `~/.bashrc`) for persistence.
+
+---
 
 Codex runs in `--full-auto` mode with a PATH-filtered environment. Tool availability is enforced by what's on `PATH` at invocation time, not by system prompt alone. This guide covers both how to put the tools on PATH and what system prompt lines route the agent to use them.
 
