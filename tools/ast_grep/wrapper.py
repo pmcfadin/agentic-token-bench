@@ -17,10 +17,14 @@ class AstGrepWrapper(ToolWrapper):
 
     def __init__(self, binary_path: str = "ast-grep") -> None:
         self._binary_path = binary_path
-        self._available = (
-            shutil.which(binary_path) is not None
-            or shutil.which("sg") is not None
-        )
+        if binary_path == "ast-grep":
+            # Support both canonical names for the ast-grep binary.
+            self._available = (
+                shutil.which("ast-grep") is not None
+                or shutil.which("sg") is not None
+            )
+        else:
+            self._available = shutil.which(binary_path) is not None
 
     def manifest(self) -> ToolManifest:
         """Return the ToolManifest loaded from manifest.yaml."""

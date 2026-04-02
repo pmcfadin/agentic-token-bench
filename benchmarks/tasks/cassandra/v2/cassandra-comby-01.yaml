@@ -1,0 +1,78 @@
+schema_version: 2
+deterministic_first: true
+version: v2
+task_id: cassandra-comby-01-v2
+title: Rename DatabaseDescriptor.getReadRepairChance() to ReadRepairConfig.getChance()
+family: comby
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+benchmark_mode: deterministic-first
+objective: >
+  Use comby to rename all occurrences of DatabaseDescriptor.getReadRepairChance()
+  to ReadRepairConfig.getChance() in the read repair Java source file.
+task_description: >
+  The Cassandra read repair subsystem currently calls
+  DatabaseDescriptor.getReadRepairChance() to retrieve the configured chance value.
+  This method is being relocated to a new ReadRepairConfig class.
+
+  Use comby to rename all call sites from DatabaseDescriptor.getReadRepairChance()
+  to ReadRepairConfig.getChance() across the Java source files.
+  Output a unified diff showing the changes. Do not modify files directly.
+success_criteria:
+  - all occurrences of DatabaseDescriptor.getReadRepairChance() are renamed
+  - the diff contains the new ReadRepairConfig.getChance() call sites
+  - no files are modified directly (comby -diff mode)
+validation_commands:
+  - "python scripts/validate_cassandra_v2_comby.py --task cassandra-comby-01-v2"
+input_artifacts:
+  - name: read_repair_combined
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-read-repair-combined.txt
+    target_name: combined-context.txt
+    primary: true
+  - name: read_repair_java
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-read-repair/ReadRepair.java
+    target_name: ReadRepair.java
+tool_invocation:
+  tool_id: comby
+  args:
+    - "DatabaseDescriptor.getReadRepairChance()"
+    - "ReadRepairConfig.getChance()"
+    - .java
+    - -diff
+    - -matcher
+    - .java
+  output_artifact: reduced_output.txt
+  output_mode: stdout
+  baseline_strategy: identity
+  timeout_seconds: 30
+deterministic_checks:
+  - name: diff_contains_new_call
+    command: python scripts/validate_cassandra_v2_comby.py --task cassandra-comby-01-v2
+quality_evaluation:
+  question: >
+    Review the unified diff output. Confirm that all occurrences of
+    DatabaseDescriptor.getReadRepairChance() have been renamed to
+    ReadRepairConfig.getChance(). List the line numbers changed.
+  raw_validation_commands:
+    - python scripts/validate_cassandra_v2_comby.py --task cassandra-comby-01-v2
+  reduced_validation_commands:
+    - python scripts/validate_cassandra_v2_comby.py --task cassandra-comby-01-v2
+  small_model_allowed: true
+  expensive_model_allowed: false
+steps:
+  - step_id: transform
+    name: transform
+    objective: >
+      Use comby to rename DatabaseDescriptor.getReadRepairChance() to
+      ReadRepairConfig.getChance() and output the unified diff.
+    required_tool: comby
+    allowed_tools: [comby]
+    blocked_tools: [ripgrep, rtk, qmd, fastmod, ast-grep]
+    completion_contract:
+      kind: diff_output
+      fields: [unified_diff]
+    artifact_requirements: [reduced_output.txt]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

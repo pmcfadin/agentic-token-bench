@@ -1,0 +1,368 @@
+=== SizeTieredCompactionStrategy.java ===
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.cassandra.db.compaction;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.schema.CompactionParams;
+
+/**
+ * Implements Size-Tiered Compaction Strategy (STCS) for Apache Cassandra.
+ *
+ * SizeTieredCompactionStrategy groups SSTables into buckets by approximate
+ * size and compacts buckets that reach the minimum threshold. This is the
+ * default compaction strategy and performs best for write-heavy workloads
+ * with infrequent reads, such as time-series data ingestion.
+ *
+ * Configuration options are managed by {@link SizeTieredCompactionStrategyOptions}.
+ */
+public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
+{
+    private static final Logger logger = LoggerFactory.getLogger(SizeTieredCompactionStrategy.class);
+
+    private final SizeTieredCompactionStrategyOptions sizeTieredOptions;
+
+    public SizeTieredCompactionStrategy(ColumnFamilyStore cfs, Map<String, String> options)
+    {
+        super(cfs, options);
+        this.sizeTieredOptions = new SizeTieredCompactionStrategyOptions(options);
+    }
+
+    /**
+     * Returns the next compaction task for SizeTieredCompactionStrategy, or null
+     * if no compaction candidates meet the minimum threshold.
+     *
+     * SizeTieredCompactionStrategy selects the largest eligible bucket whose
+     * SSTable count meets or exceeds {@code min_threshold}.
+     */
+    @Override
+    public AbstractCompactionTask getNextBackgroundTask(int gcBefore)
+    {
+        List<SSTableReader> candidates = new ArrayList<>(cfs.getUncompactingSSTables());
+        if (candidates.isEmpty())
+            return null;
+
+        List<List<SSTableReader>> buckets = getBuckets(
+            candidates,
+            sizeTieredOptions.bucketLow,
+            sizeTieredOptions.bucketHigh,
+            sizeTieredOptions.minSSTableSize
+        );
+        List<SSTableReader> sstables = getNextBackgroundSSTables(buckets, gcBefore);
+        if (sstables == null)
+            return null;
+
+        LifecycleTransaction transaction = cfs.getTracker().tryModify(sstables, OperationType.COMPACTION);
+        return transaction == null ? null : new CompactionTask(cfs, transaction, gcBefore);
+    }
+
+    /**
+     * Groups the provided SSTables into size-tiered buckets for
+     * SizeTieredCompactionStrategy compaction candidate selection.
+     *
+     * @param files       candidate SSTables to bucket
+     * @param bucketLow   lower size ratio for bucket membership
+     * @param bucketHigh  upper size ratio for bucket membership
+     * @param minSSTableSize minimum SSTable size to consider
+     * @return list of buckets, each bucket being a list of similarly-sized SSTables
+     */
+    public static List<List<SSTableReader>> getBuckets(Collection<SSTableReader> files,
+                                                        double bucketLow,
+                                                        double bucketHigh,
+                                                        long minSSTableSize)
+    {
+        List<SSTableReader> sortedFiles = new ArrayList<>(files);
+        sortedFiles.sort((a, b) -> Long.compare(a.onDiskLength(), b.onDiskLength()));
+
+        Map<Long, List<SSTableReader>> buckets = new HashMap<>();
+        for (SSTableReader sstable : sortedFiles)
+        {
+            long size = Math.max(sstable.onDiskLength(), minSSTableSize);
+            boolean added = false;
+            for (Map.Entry<Long, List<SSTableReader>> entry : buckets.entrySet())
+            {
+                long bucketAverage = entry.getKey();
+                if (size > bucketAverage * bucketLow && size < bucketAverage * bucketHigh)
+                {
+                    entry.getValue().add(sstable);
+                    added = true;
+                    break;
+                }
+            }
+            if (!added)
+            {
+                List<SSTableReader> newBucket = new ArrayList<>();
+                newBucket.add(sstable);
+                buckets.put(size, newBucket);
+            }
+        }
+        return new ArrayList<>(buckets.values());
+    }
+
+    private List<SSTableReader> getNextBackgroundSSTables(List<List<SSTableReader>> buckets, int gcBefore)
+    {
+        for (List<SSTableReader> bucket : buckets)
+        {
+            if (bucket.size() >= sizeTieredOptions.minThreshold)
+                return bucket;
+        }
+        return null;
+    }
+
+    public static Map<String, String> validateOptions(Map<String, String> options)
+        throws ConfigurationException
+    {
+        Map<String, String> unchecked = AbstractCompactionStrategy.validateOptions(options);
+        return SizeTieredCompactionStrategyOptions.validateOptions(options, unchecked);
+    }
+}
+
+=== SizeTieredCompactionStrategyOptions.java ===
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.cassandra.db.compaction;
+
+import java.util.Map;
+
+import org.apache.cassandra.exceptions.ConfigurationException;
+
+/**
+ * Tuning parameters for {@link SizeTieredCompactionStrategy}.
+ *
+ * Controls bucket boundaries and thresholds used by SizeTieredCompactionStrategy
+ * to group SSTables for compaction candidate selection.
+ */
+public final class SizeTieredCompactionStrategyOptions
+{
+    public static final long DEFAULT_MIN_SSTABLE_SIZE = 50L * 1024L * 1024L;  // 50 MB
+    public static final double DEFAULT_BUCKET_LOW = 0.5;
+    public static final double DEFAULT_BUCKET_HIGH = 1.5;
+    public static final int DEFAULT_MIN_THRESHOLD = 4;
+    public static final int DEFAULT_MAX_THRESHOLD = 32;
+
+    public static final String MIN_SSTABLE_SIZE_KEY = "min_sstable_size";
+    public static final String BUCKET_LOW_KEY = "bucket_low";
+    public static final String BUCKET_HIGH_KEY = "bucket_high";
+
+    public final long minSSTableSize;
+    public final double bucketLow;
+    public final double bucketHigh;
+    public final int minThreshold;
+    public final int maxThreshold;
+
+    public SizeTieredCompactionStrategyOptions(Map<String, String> options)
+    {
+        String v;
+
+        v = options.get(MIN_SSTABLE_SIZE_KEY);
+        minSSTableSize = (v == null) ? DEFAULT_MIN_SSTABLE_SIZE : Long.parseLong(v);
+
+        v = options.get(BUCKET_LOW_KEY);
+        bucketLow = (v == null) ? DEFAULT_BUCKET_LOW : Double.parseDouble(v);
+
+        v = options.get(BUCKET_HIGH_KEY);
+        bucketHigh = (v == null) ? DEFAULT_BUCKET_HIGH : Double.parseDouble(v);
+
+        v = options.get(AbstractCompactionStrategy.MIN_THRESHOLD_KEY);
+        minThreshold = (v == null) ? DEFAULT_MIN_THRESHOLD : Integer.parseInt(v);
+
+        v = options.get(AbstractCompactionStrategy.MAX_THRESHOLD_KEY);
+        maxThreshold = (v == null) ? DEFAULT_MAX_THRESHOLD : Integer.parseInt(v);
+    }
+
+    public static Map<String, String> validateOptions(Map<String, String> options,
+                                                       Map<String, String> uncheckedOptions)
+        throws ConfigurationException
+    {
+        String v = options.get(MIN_SSTABLE_SIZE_KEY);
+        if (v != null)
+        {
+            try
+            {
+                long minSize = Long.parseLong(v);
+                if (minSize < 0)
+                    throw new ConfigurationException(MIN_SSTABLE_SIZE_KEY + " must be non-negative");
+            }
+            catch (NumberFormatException e)
+            {
+                throw new ConfigurationException(MIN_SSTABLE_SIZE_KEY + " is not a valid long value", e);
+            }
+        }
+
+        v = options.get(BUCKET_LOW_KEY);
+        if (v != null)
+        {
+            double low = Double.parseDouble(v);
+            if (low <= 0 || low >= 1)
+                throw new ConfigurationException(BUCKET_LOW_KEY + " must be between 0.0 and 1.0 exclusive");
+        }
+
+        v = options.get(BUCKET_HIGH_KEY);
+        if (v != null)
+        {
+            double high = Double.parseDouble(v);
+            if (high <= 1)
+                throw new ConfigurationException(BUCKET_HIGH_KEY + " must be greater than 1.0");
+        }
+
+        uncheckedOptions.remove(MIN_SSTABLE_SIZE_KEY);
+        uncheckedOptions.remove(BUCKET_LOW_KEY);
+        uncheckedOptions.remove(BUCKET_HIGH_KEY);
+        return uncheckedOptions;
+    }
+}
+
+=== SizeTieredCompactionStrategyTest.java ===
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.cassandra.db.compaction;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import com.google.common.collect.ImmutableMap;
+import org.junit.BeforeClass;
+import org.junit.Test;
+
+import org.apache.cassandra.SchemaLoader;
+import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.exceptions.ConfigurationException;
+
+import static org.junit.Assert.*;
+
+/**
+ * Unit and integration tests for SizeTieredCompactionStrategy.
+ *
+ * Verifies bucket grouping, threshold enforcement, option validation, and
+ * SSTable candidate selection for the SizeTieredCompactionStrategy
+ * compaction implementation.
+ */
+public class SizeTieredCompactionStrategyTest
+{
+    @BeforeClass
+    public static void setupDD()
+    {
+        DatabaseDescriptor.daemonInitialization();
+        SchemaLoader.prepareServer();
+    }
+
+    @Test
+    public void testGetBucketsReturnsEmptyForNoInput()
+    {
+        // SizeTieredCompactionStrategy.getBuckets should return empty list for empty input
+        List<List<Object>> buckets = (List<List<Object>>) (List<?>) SizeTieredCompactionStrategy.getBuckets(
+            new ArrayList<>(),
+            SizeTieredCompactionStrategyOptions.DEFAULT_BUCKET_LOW,
+            SizeTieredCompactionStrategyOptions.DEFAULT_BUCKET_HIGH,
+            SizeTieredCompactionStrategyOptions.DEFAULT_MIN_SSTABLE_SIZE
+        );
+        assertTrue("SizeTieredCompactionStrategy should produce no buckets for empty input", buckets.isEmpty());
+    }
+
+    @Test
+    public void testValidateDefaultOptions() throws ConfigurationException
+    {
+        // Default options for SizeTieredCompactionStrategy should validate without error
+        Map<String, String> opts = ImmutableMap.of();
+        Map<String, String> result = SizeTieredCompactionStrategy.validateOptions(opts);
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testOptionsMinSSTableSizeParsed()
+    {
+        Map<String, String> opts = ImmutableMap.of(
+            SizeTieredCompactionStrategyOptions.MIN_SSTABLE_SIZE_KEY, "52428800"
+        );
+        SizeTieredCompactionStrategyOptions options = new SizeTieredCompactionStrategyOptions(opts);
+        assertEquals(52428800L, options.minSSTableSize);
+    }
+
+    @Test
+    public void testOptionsBucketLowParsed()
+    {
+        Map<String, String> opts = ImmutableMap.of(
+            SizeTieredCompactionStrategyOptions.BUCKET_LOW_KEY, "0.4"
+        );
+        SizeTieredCompactionStrategyOptions options = new SizeTieredCompactionStrategyOptions(opts);
+        assertEquals(0.4, options.bucketLow, 0.001);
+    }
+
+    @Test
+    public void testOptionsBucketHighParsed()
+    {
+        Map<String, String> opts = ImmutableMap.of(
+            SizeTieredCompactionStrategyOptions.BUCKET_HIGH_KEY, "2.0"
+        );
+        SizeTieredCompactionStrategyOptions options = new SizeTieredCompactionStrategyOptions(opts);
+        assertEquals(2.0, options.bucketHigh, 0.001);
+    }
+
+    @Test(expected = ConfigurationException.class)
+    public void testValidateOptionsRejectsNegativeMinSSTableSize() throws ConfigurationException
+    {
+        Map<String, String> opts = ImmutableMap.of(
+            SizeTieredCompactionStrategyOptions.MIN_SSTABLE_SIZE_KEY, "-1"
+        );
+        SizeTieredCompactionStrategy.validateOptions(opts);
+    }
+}

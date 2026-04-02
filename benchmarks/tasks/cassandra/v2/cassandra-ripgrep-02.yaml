@@ -23,7 +23,17 @@ success_criteria:
   - no files were modified
 validation_commands:
   - "python scripts/validate_cassandra_v2_ripgrep.py --task cassandra-ripgrep-02-v2"
-input_artifacts: []
+input_artifacts:
+  - name: stcs_java
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-stcs/SizeTieredCompactionStrategy.java
+    target_name: src/java/org/apache/cassandra/db/compaction/SizeTieredCompactionStrategy.java
+    primary: true
+  - name: stcs_options_java
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-stcs/SizeTieredCompactionStrategyOptions.java
+    target_name: src/java/org/apache/cassandra/db/compaction/SizeTieredCompactionStrategyOptions.java
+  - name: stcs_test_java
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-stcs/SizeTieredCompactionStrategyTest.java
+    target_name: test/unit/org/apache/cassandra/db/compaction/SizeTieredCompactionStrategyTest.java
 tool_invocation:
   tool_id: ripgrep
   args:

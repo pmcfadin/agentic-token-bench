@@ -971,6 +971,8 @@ def render_layered_html_report(
         f"<td>{metrics.run_count}</td>"
         f"<td>{_format_number(metrics.avg_raw_bytes, 1)}</td>"
         f"<td>{_format_number(metrics.avg_reduced_bytes, 1)}</td>"
+        f"<td>{_format_number(metrics.avg_raw_tokens, 1)}</td>"
+        f"<td>{_format_number(metrics.avg_reduced_tokens, 1)}</td>"
         f"<td>{_format_number(metrics.avg_reduction_ratio, 3)}</td>"
         f"<td>{_format_status(metrics.deterministic_pass_rate)}</td>"
         f"<td>{_format_number(metrics.avg_elapsed_seconds, 1)}</td>"
@@ -988,6 +990,8 @@ def render_layered_html_report(
         f"<td>{_format_number(metrics.avg_quality_delta, 2)}</td>"
         f"<td>{metrics.llm_call_count_small}</td>"
         f"<td>{metrics.llm_call_count_expensive}</td>"
+        f"<td>{_format_number(metrics.avg_raw_llm_tokens, 0)}</td>"
+        f"<td>{_format_number(metrics.avg_reduced_llm_tokens, 0)}</td>"
         "</tr>"
         for family in quality_scorecard.families
         for metrics in (family.baseline, family.tool_variant)
@@ -1062,6 +1066,8 @@ def render_layered_html_report(
             <th>Runs</th>
             <th>Avg raw bytes</th>
             <th>Avg reduced bytes</th>
+            <th>Avg raw tokens</th>
+            <th>Avg reduced tokens</th>
             <th>Avg reduction ratio</th>
             <th>Deterministic pass</th>
             <th>Avg elapsed (s)</th>
@@ -1084,6 +1090,8 @@ def render_layered_html_report(
             <th>Avg quality delta</th>
             <th>Small LLM calls</th>
             <th>Expensive LLM calls</th>
+            <th>Avg raw LLM tokens</th>
+            <th>Avg reduced LLM tokens</th>
           </tr>
         </thead>
         <tbody>{quality_rows}</tbody>

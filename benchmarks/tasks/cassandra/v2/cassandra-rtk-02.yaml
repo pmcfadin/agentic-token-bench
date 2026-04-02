@@ -2,58 +2,58 @@ schema_version: 2
 deterministic_first: true
 version: v2
 task_id: cassandra-rtk-02-v2
-title: Extract the exact failing test from noisy Cassandra test output
+title: Compress Gossiper.java to its dependency surface with rtk read
 family: rtk
 repo: cassandra
 pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
 benchmark_mode: deterministic-first
 objective: >
-  Use rtk to compress a pre-captured Cassandra test log and preserve the
-  exact failing test signature. Do not repair the test.
+  Use rtk read with aggressive filtering to compress Gossiper.java from
+  2746 lines to its dependency surface and static interface, stripping
+  the license header and all method bodies.
 task_description: >
-  A pre-captured Cassandra unit test log has been placed in your workspace
-  at `cassandra-test-failure.log`. The log was produced by running
-  `ant test -Dtest.name=CompactionManagerTest` and contains enough noise that
-  the relevant failure signal must be compressed out.
+  The Cassandra gossip implementation has been placed in your workspace at
+  Gossiper.java. The file is 2746 lines of Java source.
 
   Your task is to:
 
-  (1) Use rtk to compress `cassandra-test-failure.log`.
+  (1) Use rtk read with aggressive filtering (-l aggressive) on Gossiper.java.
 
-  (2) Preserve the failing test method name, the exception type, and the
-      assertion message exactly.
+  (2) Confirm that import declarations and key static identifiers appear in
+      the compressed output.
 
-  (3) Return the compressed output and the failure details only. Do not edit
-      any files.
+  (3) Return the compressed output. Do not edit any files.
 success_criteria:
-  - compressed output preserves the failing test signature
-  - the failing test method is identified exactly
-  - the exception type and assertion message are identified exactly
+  - rtk read -l aggressive is used on Gossiper.java
+  - import statements and key static identifiers appear in output
+  - Apache license header is absent from the output
   - no files are modified
 validation_commands:
   - "python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-02-v2"
-fixture_files:
-  - benchmarks/tasks/cassandra/fixtures/cassandra-test-failure.log
+fixture_files: []
 input_artifacts:
-  - name: test_log
-    source: benchmarks/tasks/cassandra/fixtures/cassandra-test-failure.log
-    target_name: cassandra-test-failure.log
+  - name: gossiper_source
+    source: benchmarks/tasks/cassandra/fixtures/Gossiper.java
+    target_name: Gossiper.java
     primary: true
 tool_invocation:
   tool_id: rtk
   args:
     - read
-    - cassandra-test-failure.log
+    - Gossiper.java
+    - -l
+    - aggressive
   output_artifact: reduced_output.txt
   baseline_strategy: identity
-  timeout_seconds: 120
+  timeout_seconds: 30
 deterministic_checks:
-  - name: preserve_test_failure
+  - name: dependency_surface_with_header_stripped
     command: python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-02-v2
 quality_evaluation:
   question: >
-    Identify the failing test method name, exception type, and exact assertion
-    message from this Cassandra test output.
+    Identify the Cassandra and third-party packages imported by Gossiper.java
+    and the static identifiers visible in the compressed rtk output. Confirm
+    the Apache license header is absent.
   raw_validation_commands:
     - python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-02-v2
   reduced_validation_commands:
@@ -61,20 +61,17 @@ quality_evaluation:
   small_model_allowed: true
   expensive_model_allowed: false
   escalation_note: >
-    Escalate only if the compressed output loses the exact test method,
-    exception type, or assertion message.
+    Escalate only if import declarations are missing or if the license
+    header appears verbatim in the output.
 output_contract:
   required_fields:
     - compressed_output
-    - failing_test
-    - exception_type
-    - exception_message
 steps:
   - step_id: compress
     name: compress
     objective: >
-      Use rtk to compress `cassandra-test-failure.log` while preserving the
-      exact failing test method, exception type, and assertion message.
+      Use rtk read -l aggressive on Gossiper.java to compress it to its
+      dependency surface.
     required_tool: rtk
     allowed_tools: [rtk]
     blocked_tools: [ripgrep, qmd, fastmod, ast-grep, comby]
@@ -85,14 +82,13 @@ steps:
   - step_id: report
     name: report
     objective: >
-      Produce the final structured answer with the compressed output and the
-      exact test failure details.
+      Produce the final structured answer with the compressed output.
     required_tool: null
     allowed_tools: []
     blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
     completion_contract:
       kind: structured_answer
-      fields: [compressed_output, failing_test, exception_type, exception_message]
+      fields: [compressed_output]
     artifact_requirements: [final_answer]
 baseline_policy:
   remove_tool_under_test: true

@@ -1,0 +1,83 @@
+schema_version: 2
+deterministic_first: true
+version: v2
+task_id: cassandra-ast-grep-01-v2
+title: AST-aware rename of DatabaseDescriptor.getReadRepairChance() to ReadRepairConfig.getChance()
+family: ast-grep
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+benchmark_mode: deterministic-first
+objective: >
+  Use ast-grep to perform an AST-aware rename of all call sites of
+  DatabaseDescriptor.getReadRepairChance() to ReadRepairConfig.getChance()
+  in the read repair Java source file.
+task_description: >
+  The Cassandra read repair subsystem calls DatabaseDescriptor.getReadRepairChance()
+  to retrieve the configured chance value. This method is being relocated to a new
+  ReadRepairConfig class.
+
+  Use ast-grep with --lang java to perform an AST-aware transformation that renames
+  all method call sites from DatabaseDescriptor.getReadRepairChance() to
+  ReadRepairConfig.getChance(). The tool modifies files in place; the harness
+  captures the unified diff of the workspace changes.
+success_criteria:
+  - all occurrences of DatabaseDescriptor.getReadRepairChance() are renamed in the source
+  - the unified diff contains ReadRepairConfig.getChance() as added lines
+  - no remaining DatabaseDescriptor.getReadRepairChance() calls appear as added lines
+validation_commands:
+  - "python scripts/validate_cassandra_v2_ast_grep.py --task cassandra-ast-grep-01-v2"
+input_artifacts:
+  - name: read_repair_combined
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-read-repair-combined.txt
+    target_name: combined-context.txt
+    primary: true
+  - name: read_repair_java
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-read-repair/ReadRepair.java
+    target_name: ReadRepair.java
+tool_invocation:
+  tool_id: ast-grep
+  args:
+    - run
+    - --pattern
+    - "DatabaseDescriptor.getReadRepairChance()"
+    - --rewrite
+    - "ReadRepairConfig.getChance()"
+    - --lang
+    - java
+    - -U
+    - .
+  output_artifact: reduced_output.txt
+  output_mode: diff
+  baseline_strategy: identity
+  timeout_seconds: 30
+deterministic_checks:
+  - name: diff_contains_new_call
+    command: python scripts/validate_cassandra_v2_ast_grep.py --task cassandra-ast-grep-01-v2
+quality_evaluation:
+  question: >
+    Review the unified diff output. Confirm that all call sites of
+    DatabaseDescriptor.getReadRepairChance() have been renamed to
+    ReadRepairConfig.getChance(). List the exact lines changed.
+  raw_validation_commands:
+    - python scripts/validate_cassandra_v2_ast_grep.py --task cassandra-ast-grep-01-v2
+  reduced_validation_commands:
+    - python scripts/validate_cassandra_v2_ast_grep.py --task cassandra-ast-grep-01-v2
+  small_model_allowed: true
+  expensive_model_allowed: false
+steps:
+  - step_id: transform
+    name: transform
+    objective: >
+      Use ast-grep to rename DatabaseDescriptor.getReadRepairChance() to
+      ReadRepairConfig.getChance() in all Java source files.
+    required_tool: ast-grep
+    allowed_tools: [ast-grep]
+    blocked_tools: [ripgrep, rtk, qmd, fastmod, comby]
+    completion_contract:
+      kind: diff_output
+      fields: [unified_diff]
+    artifact_requirements: [reduced_output.txt]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

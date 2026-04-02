@@ -1,0 +1,83 @@
+schema_version: 2
+deterministic_first: true
+version: v2
+task_id: cassandra-fastmod-02-v2
+title: Rename minThreshold to minCompactionThreshold in STCS implementation
+family: fastmod
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+benchmark_mode: deterministic-first
+objective: >
+  Use fastmod to rename all occurrences of minThreshold to minCompactionThreshold
+  in the SizeTieredCompactionStrategy implementation and options files.
+task_description: >
+  The SizeTieredCompactionStrategyOptions field minThreshold is being renamed to
+  minCompactionThreshold to make its purpose unambiguous across the compaction
+  strategy hierarchy.
+
+  Use fastmod with --accept-all --fixed-strings to rename all occurrences of
+  minThreshold to minCompactionThreshold across the Java source files.
+  The tool modifies files in place; the harness captures the unified diff of all
+  workspace changes.
+success_criteria:
+  - all occurrences of minCompactionThreshold appear in the diff as added lines
+  - all occurrences of minThreshold appear in the diff as removed lines
+  - no remaining minThreshold appears as an added line
+validation_commands:
+  - "python scripts/validate_cassandra_v2_fastmod.py --task cassandra-fastmod-02-v2"
+input_artifacts:
+  - name: stcs_combined
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-stcs-combined.txt
+    target_name: combined-context.txt
+    primary: true
+  - name: stcs_java
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-stcs/SizeTieredCompactionStrategy.java
+    target_name: SizeTieredCompactionStrategy.java
+  - name: stcs_options_java
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-stcs/SizeTieredCompactionStrategyOptions.java
+    target_name: SizeTieredCompactionStrategyOptions.java
+tool_invocation:
+  tool_id: fastmod
+  args:
+    - --accept-all
+    - --fixed-strings
+    - "minThreshold"
+    - "minCompactionThreshold"
+    - -e
+    - "java"
+    - .
+  output_artifact: reduced_output.txt
+  output_mode: diff
+  baseline_strategy: identity
+  timeout_seconds: 30
+deterministic_checks:
+  - name: diff_contains_renamed_field
+    command: python scripts/validate_cassandra_v2_fastmod.py --task cassandra-fastmod-02-v2
+quality_evaluation:
+  question: >
+    Review the unified diff output. Confirm that all occurrences of minThreshold
+    have been renamed to minCompactionThreshold in the STCS source files.
+    List the files and line numbers changed.
+  raw_validation_commands:
+    - python scripts/validate_cassandra_v2_fastmod.py --task cassandra-fastmod-02-v2
+  reduced_validation_commands:
+    - python scripts/validate_cassandra_v2_fastmod.py --task cassandra-fastmod-02-v2
+  small_model_allowed: true
+  expensive_model_allowed: false
+steps:
+  - step_id: transform
+    name: transform
+    objective: >
+      Use fastmod to rename minThreshold to minCompactionThreshold across all
+      Java source files in the workspace.
+    required_tool: fastmod
+    allowed_tools: [fastmod]
+    blocked_tools: [ripgrep, rtk, qmd, comby, ast-grep]
+    completion_contract:
+      kind: diff_output
+      fields: [unified_diff]
+    artifact_requirements: [reduced_output.txt]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

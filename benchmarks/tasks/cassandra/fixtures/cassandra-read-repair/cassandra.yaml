@@ -1,0 +1,27 @@
+# cassandra.yaml — read repair configuration excerpt
+#
+# This file contains the read repair settings for Apache Cassandra.
+# These settings control the probability that a read operation will
+# trigger a background repair of out-of-sync replicas.
+
+# read_repair_chance: (Default: 0.0)
+#   Specifies the probability with which read repairs should be invoked on
+#   non-quorum reads. Must be between 0.0 and 1.0. Setting this to 0.0
+#   disables opportunistic read repair. It is recommended to leave this at
+#   0.0 and rely on dc_local_read_repair_chance for repair triggering.
+read_repair_chance: 0.0
+
+# dc_local_read_repair_chance: (Default: 0.1)
+#   Specifies the probability with which read repairs should be invoked on
+#   non-quorum reads for operations within the local datacenter only.
+#   Unlike read_repair_chance, this controls only same-DC replica repair.
+dc_local_read_repair_chance: 0.1
+
+# read_request_timeout_in_ms: (Default: 5000)
+#   How long the coordinator should wait for read operations to complete
+#   before timing out and returning a ReadTimeoutException to the client.
+read_request_timeout_in_ms: 5000
+
+# range_request_timeout_in_ms: (Default: 10000)
+#   How long the coordinator waits for sequential/unordered scans to complete.
+range_request_timeout_in_ms: 10000

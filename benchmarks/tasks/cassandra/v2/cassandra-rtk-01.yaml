@@ -2,58 +2,190 @@ schema_version: 2
 deterministic_first: true
 version: v2
 task_id: cassandra-rtk-01-v2
-title: Extract the exact build failure from noisy Cassandra build output
+title: List the Cassandra db package with rtk ls
 family: rtk
 repo: cassandra
 pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
 benchmark_mode: deterministic-first
 objective: >
-  Use rtk to compress a pre-captured Cassandra build log and preserve the
-  exact javac failure signal. Do not repair the build.
+  Use rtk ls to produce a compact directory listing of the Cassandra db
+  package (45 source files). The output must retain all class names and
+  strip the permission, ownership, and timestamp noise from plain ls -la.
 task_description: >
-  A pre-captured Apache Cassandra build log has been placed in your workspace
-  at `cassandra-build-failure.log`. The log was produced by an `ant build`
-  invocation and contains enough noise that the real failure signal should be
-  compressed out.
+  A flat slice of the Cassandra db package has been placed in your workspace
+  at cassandra-db/. It contains 45 Java source files.
 
   Your task is to:
 
-  (1) Use rtk to compress `cassandra-build-failure.log`.
+  (1) Use rtk ls on cassandra-db/ to produce a compact listing.
 
-  (2) Preserve the exact source file, line number, and missing symbol from the
-      compiler error.
+  (2) Confirm that the key class names appear in the output.
 
-  (3) Return the compressed output and the failure details only. Do not edit
-      any files.
+  (3) Return the compressed listing. Do not edit any files.
 success_criteria:
-  - compressed output preserves the `cannot find symbol` failure
-  - the failing source file and line number are identified
-  - the missing symbol name is identified exactly
+  - rtk ls is used on cassandra-db/
+  - key class names appear in the compressed listing
+  - permission strings, timestamps, and ownership fields are absent
   - no files are modified
 validation_commands:
   - "python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-01-v2"
-fixture_files:
-  - benchmarks/tasks/cassandra/fixtures/cassandra-build-failure.log
+fixture_files: []
 input_artifacts:
-  - name: build_log
-    source: benchmarks/tasks/cassandra/fixtures/cassandra-build-failure.log
-    target_name: cassandra-build-failure.log
+  - name: cassandra_db_ls_baseline
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db-ls-la.txt
+    target_name: cassandra-db-ls-la.txt
     primary: true
+  - name: AbstractReadCommandBuilder
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/AbstractReadCommandBuilder.java
+    target_name: cassandra-db/AbstractReadCommandBuilder.java
+  - name: BatchlogManager
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/BatchlogManager.java
+    target_name: cassandra-db/BatchlogManager.java
+  - name: BufferClusteringBound
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/BufferClusteringBound.java
+    target_name: cassandra-db/BufferClusteringBound.java
+  - name: ClusteringPrefix
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/ClusteringPrefix.java
+    target_name: cassandra-db/ClusteringPrefix.java
+  - name: ColumnFamilyStore
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/ColumnFamilyStore.java
+    target_name: cassandra-db/ColumnFamilyStore.java
+  - name: ColumnFamilyStoreMBean
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/ColumnFamilyStoreMBean.java
+    target_name: cassandra-db/ColumnFamilyStoreMBean.java
+  - name: ColumnIndex
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/ColumnIndex.java
+    target_name: cassandra-db/ColumnIndex.java
+  - name: ConsistencyLevel
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/ConsistencyLevel.java
+    target_name: cassandra-db/ConsistencyLevel.java
+  - name: CounterMutation
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/CounterMutation.java
+    target_name: cassandra-db/CounterMutation.java
+  - name: DecoratedKey
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/DecoratedKey.java
+    target_name: cassandra-db/DecoratedKey.java
+  - name: DeletionInfo
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/DeletionInfo.java
+    target_name: cassandra-db/DeletionInfo.java
+  - name: DeletionTime
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/DeletionTime.java
+    target_name: cassandra-db/DeletionTime.java
+  - name: DeserializationHelper
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/DeserializationHelper.java
+    target_name: cassandra-db/DeserializationHelper.java
+  - name: Directories
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/Directories.java
+    target_name: cassandra-db/Directories.java
+  - name: EmptyIterators
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/EmptyIterators.java
+    target_name: cassandra-db/EmptyIterators.java
+  - name: ExpirationDateOverflowHandling
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/ExpirationDateOverflowHandling.java
+    target_name: cassandra-db/ExpirationDateOverflowHandling.java
+  - name: IMutation
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/IMutation.java
+    target_name: cassandra-db/IMutation.java
+  - name: Keyspace
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/Keyspace.java
+    target_name: cassandra-db/Keyspace.java
+  - name: KeyspaceNotDefinedException
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/KeyspaceNotDefinedException.java
+    target_name: cassandra-db/KeyspaceNotDefinedException.java
+  - name: LivenessInfo
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/LivenessInfo.java
+    target_name: cassandra-db/LivenessInfo.java
+  - name: Memtable
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/Memtable.java
+    target_name: cassandra-db/Memtable.java
+  - name: Mutation
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/Mutation.java
+    target_name: cassandra-db/Mutation.java
+  - name: MutationVerbHandler
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/MutationVerbHandler.java
+    target_name: cassandra-db/MutationVerbHandler.java
+  - name: PartitionRangeReadCommand
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/PartitionRangeReadCommand.java
+    target_name: cassandra-db/PartitionRangeReadCommand.java
+  - name: ReadCommand
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/ReadCommand.java
+    target_name: cassandra-db/ReadCommand.java
+  - name: ReadCommandVerbHandler
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/ReadCommandVerbHandler.java
+    target_name: cassandra-db/ReadCommandVerbHandler.java
+  - name: ReadExecutionController
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/ReadExecutionController.java
+    target_name: cassandra-db/ReadExecutionController.java
+  - name: ReadRepairDecision
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/ReadRepairDecision.java
+    target_name: cassandra-db/ReadRepairDecision.java
+  - name: ReadResponse
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/ReadResponse.java
+    target_name: cassandra-db/ReadResponse.java
+  - name: RegularAndStaticColumns
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/RegularAndStaticColumns.java
+    target_name: cassandra-db/RegularAndStaticColumns.java
+  - name: SchemaLoader
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/SchemaLoader.java
+    target_name: cassandra-db/SchemaLoader.java
+  - name: SerializationHeader
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/SerializationHeader.java
+    target_name: cassandra-db/SerializationHeader.java
+  - name: SinglePartitionReadCommand
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/SinglePartitionReadCommand.java
+    target_name: cassandra-db/SinglePartitionReadCommand.java
+  - name: Slice
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/Slice.java
+    target_name: cassandra-db/Slice.java
+  - name: SliceableUnfilteredRowIterator
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/SliceableUnfilteredRowIterator.java
+    target_name: cassandra-db/SliceableUnfilteredRowIterator.java
+  - name: Slices
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/Slices.java
+    target_name: cassandra-db/Slices.java
+  - name: SystemKeyspace
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/SystemKeyspace.java
+    target_name: cassandra-db/SystemKeyspace.java
+  - name: SystemKeyspaceMigrator40
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/SystemKeyspaceMigrator40.java
+    target_name: cassandra-db/SystemKeyspaceMigrator40.java
+  - name: TruncateVerbHandler
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/TruncateVerbHandler.java
+    target_name: cassandra-db/TruncateVerbHandler.java
+  - name: UnfilteredDeserializer
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/UnfilteredDeserializer.java
+    target_name: cassandra-db/UnfilteredDeserializer.java
+  - name: UnfilteredRowIteratorSerializer
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/UnfilteredRowIteratorSerializer.java
+    target_name: cassandra-db/UnfilteredRowIteratorSerializer.java
+  - name: UnfilteredRowIterators
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/UnfilteredRowIterators.java
+    target_name: cassandra-db/UnfilteredRowIterators.java
+  - name: WriteContext
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/WriteContext.java
+    target_name: cassandra-db/WriteContext.java
+  - name: WriteType
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/WriteType.java
+    target_name: cassandra-db/WriteType.java
+  - name: WriteVerbs
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-db/WriteVerbs.java
+    target_name: cassandra-db/WriteVerbs.java
 tool_invocation:
   tool_id: rtk
   args:
-    - read
-    - cassandra-build-failure.log
+    - ls
+    - cassandra-db/
   output_artifact: reduced_output.txt
   baseline_strategy: identity
-  timeout_seconds: 120
+  timeout_seconds: 30
 deterministic_checks:
-  - name: preserve_build_failure
+  - name: compact_listing_with_signal_retention
     command: python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-01-v2
 quality_evaluation:
   question: >
-    Identify the failing source file, line number, missing symbol, and the
-    exact compiler error from this Cassandra build output.
+    List all Java class names in cassandra-db/ and confirm that verbose
+    ls -la noise (permissions, owner, timestamps) is absent from the
+    rtk ls output.
   raw_validation_commands:
     - python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-01-v2
   reduced_validation_commands:
@@ -61,38 +193,33 @@ quality_evaluation:
   small_model_allowed: true
   expensive_model_allowed: false
   escalation_note: >
-    Escalate only if the compressed output loses the exact source line,
-    symbol, or error anchor.
+    Escalate only if class names are missing from the listing or if
+    permission strings appear in the output.
 output_contract:
   required_fields:
-    - compressed_output
-    - failure_file
-    - failure_line
-    - failure_symbol
+    - compressed_listing
 steps:
-  - step_id: compress
-    name: compress
+  - step_id: list
+    name: list
     objective: >
-      Use rtk to compress `cassandra-build-failure.log` while preserving the
-      exact javac failure line and missing symbol name.
+      Use rtk ls on cassandra-db/ to produce a compact listing.
     required_tool: rtk
     allowed_tools: [rtk]
     blocked_tools: [ripgrep, qmd, fastmod, ast-grep, comby]
     completion_contract:
       kind: structured_answer
-      fields: [compressed_output]
+      fields: [compressed_listing]
     artifact_requirements: [step_trace]
   - step_id: report
     name: report
     objective: >
-      Produce the final structured answer with the compressed output and the
-      exact build failure details.
+      Produce the final structured answer with the compressed listing.
     required_tool: null
     allowed_tools: []
     blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
     completion_contract:
       kind: structured_answer
-      fields: [compressed_output, failure_file, failure_line, failure_symbol]
+      fields: [compressed_listing]
     artifact_requirements: [final_answer]
 baseline_policy:
   remove_tool_under_test: true

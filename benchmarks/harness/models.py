@@ -176,6 +176,8 @@ class QualityRetentionMetrics(BaseModel):
     llm_call_count_expensive: int = 0
     escalation_reason: str | None = None
     evaluator_model_class: EvaluatorModelClass = EvaluatorModelClass.none
+    raw_llm_tokens: int | None = None
+    reduced_llm_tokens: int | None = None
 
 
 # --- Run record models ---
@@ -277,6 +279,8 @@ class ToolEfficacyVariantMetrics(BaseModel):
     run_count: int
     avg_raw_bytes: float | None = None
     avg_reduced_bytes: float | None = None
+    avg_raw_tokens: float | None = None
+    avg_reduced_tokens: float | None = None
     avg_reduction_ratio: float | None = None
     deterministic_pass_rate: float | None = None
     avg_elapsed_seconds: float | None = None
@@ -302,6 +306,8 @@ class QualityRetentionVariantMetrics(BaseModel):
     avg_quality_delta: float | None = None
     llm_call_count_small: int = 0
     llm_call_count_expensive: int = 0
+    avg_raw_llm_tokens: float | None = None
+    avg_reduced_llm_tokens: float | None = None
 
 
 class QualityRetentionFamilyScorecard(BaseModel):

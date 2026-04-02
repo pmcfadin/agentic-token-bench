@@ -6,6 +6,7 @@ without disturbing the legacy v1 agentic runner.
 
 from __future__ import annotations
 
+import difflib
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -122,6 +123,12 @@ class LayeredBenchmarkRunner:
         status = RunStatus.passed
         notes: list[str] = []
 
+        pre_snapshots: dict[str, bytes] = {}
+        if task.tool_invocation.output_mode == "diff":
+            for artifact in task.input_artifacts:
+                p = workspace / artifact.target_name
+                pre_snapshots[artifact.target_name] = p.read_bytes() if p.exists() else b""
+
         if variant == Variant.baseline.value and task.tool_invocation.baseline_strategy == "identity":
             copy_artifact(raw_artifact_path, output_artifact_path)
             tool_exit_status = 0
@@ -142,7 +149,24 @@ class LayeredBenchmarkRunner:
                 timeout=task.tool_invocation.timeout_seconds,
             )
             tool_exit_status = result.exit_status
-            write_text_artifact(artifact_dir, task.tool_invocation.output_artifact, result.stdout)
+            if task.tool_invocation.output_mode == "diff":
+                diff_lines: list[str] = []
+                for artifact in task.input_artifacts:
+                    pre = pre_snapshots[artifact.target_name]
+                    post_path = workspace / artifact.target_name
+                    post = post_path.read_bytes() if post_path.exists() else b""
+                    if pre != post:
+                        diff_lines.extend(
+                            difflib.unified_diff(
+                                pre.decode("utf-8", errors="replace").splitlines(keepends=True),
+                                post.decode("utf-8", errors="replace").splitlines(keepends=True),
+                                fromfile=f"a/{artifact.target_name}",
+                                tofile=f"b/{artifact.target_name}",
+                            )
+                        )
+                write_text_artifact(artifact_dir, task.tool_invocation.output_artifact, "".join(diff_lines))
+            else:
+                write_text_artifact(artifact_dir, task.tool_invocation.output_artifact, result.stdout)
             write_text_artifact(artifact_dir, "tool_stderr.txt", result.stderr)
             if result.exit_status != 0:
                 status = RunStatus.failed
@@ -177,11 +201,21 @@ class LayeredBenchmarkRunner:
         else:
             validation_status = ValidationStatus.skipped
 
+        import tiktoken
+        _enc = tiktoken.get_encoding("cl100k_base")
+
         raw_bytes = raw_artifact_path.stat().st_size
         reduced_bytes = output_artifact_path.stat().st_size if output_artifact_path.exists() else None
         reduction_ratio = None
         if reduced_bytes is not None and raw_bytes > 0:
             reduction_ratio = reduced_bytes / raw_bytes
+
+        raw_tokens = len(_enc.encode(raw_artifact_path.read_text(encoding="utf-8")))
+        reduced_tokens = (
+            len(_enc.encode(output_artifact_path.read_text(encoding="utf-8")))
+            if output_artifact_path.exists()
+            else None
+        )
 
         finished_at = datetime.now(tz=timezone.utc)
         record = RunRecord(
@@ -215,6 +249,8 @@ class LayeredBenchmarkRunner:
             tool_metrics=ToolEfficacyMetrics(
                 raw_bytes=raw_bytes,
                 reduced_bytes=reduced_bytes,
+                raw_tokens=raw_tokens,
+                reduced_tokens=reduced_tokens,
                 reduction_ratio=reduction_ratio,
                 deterministic_valid=validation_status == ValidationStatus.passed,
                 deterministic_check_count=len(validation_results),
@@ -285,6 +321,7 @@ class LayeredBenchmarkRunner:
             workspace=Path(source_run_dir),
             timeout=180.0,
         )
+        raw_reported = adapter.extract_reported_tokens(raw_result)
         _emit(f"run-quality-eval: invoking {type(adapter).__name__} on reduced artifact")
         reduced_result = adapter.run_step(
             prompt=reduced_prompt,
@@ -292,6 +329,7 @@ class LayeredBenchmarkRunner:
             workspace=Path(source_run_dir),
             timeout=180.0,
         )
+        reduced_reported = adapter.extract_reported_tokens(reduced_result)
         write_text_artifact(artifact_dir, "raw_answer.txt", raw_result.stdout)
         write_text_artifact(artifact_dir, "reduced_answer.txt", reduced_result.stdout)
 
@@ -369,6 +407,8 @@ class LayeredBenchmarkRunner:
                 llm_call_count_expensive=expensive_calls,
                 escalation_reason=task.quality_evaluation.escalation_note,
                 evaluator_model_class=evaluator_model_class,
+                raw_llm_tokens=raw_reported.total_tokens or None,
+                reduced_llm_tokens=reduced_reported.total_tokens or None,
             ),
         )
         write_run_record(artifact_dir, record)

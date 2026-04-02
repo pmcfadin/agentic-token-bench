@@ -1,0 +1,75 @@
+schema_version: 2
+deterministic_first: true
+version: v2
+task_id: cassandra-comby-02-v2
+title: Rename read_repair_chance to read_repair_probability in cassandra.yaml
+family: comby
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+benchmark_mode: deterministic-first
+objective: >
+  Use comby to rename the read_repair_chance configuration key to
+  read_repair_probability in the cassandra.yaml configuration file.
+task_description: >
+  The Cassandra configuration key read_repair_chance is being renamed to
+  read_repair_probability to better reflect its semantics.
+
+  Use comby to rename all occurrences of read_repair_chance to
+  read_repair_probability in the YAML configuration file and output
+  a unified diff of the changes.
+success_criteria:
+  - all occurrences of read_repair_probability appear in the diff as additions
+  - all occurrences of read_repair_chance appear in the diff as removals
+  - no files are modified directly (comby -diff mode)
+validation_commands:
+  - "python scripts/validate_cassandra_v2_comby.py --task cassandra-comby-02-v2"
+input_artifacts:
+  - name: read_repair_combined
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-read-repair-combined.txt
+    target_name: combined-context.txt
+    primary: true
+  - name: cassandra_yaml
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-read-repair/cassandra.yaml
+    target_name: cassandra.yaml
+tool_invocation:
+  tool_id: comby
+  args:
+    - "read_repair_chance"
+    - "read_repair_probability"
+    - .yaml
+    - -diff
+  output_artifact: reduced_output.txt
+  output_mode: stdout
+  baseline_strategy: identity
+  timeout_seconds: 30
+deterministic_checks:
+  - name: diff_contains_renamed_key
+    command: python scripts/validate_cassandra_v2_comby.py --task cassandra-comby-02-v2
+quality_evaluation:
+  question: >
+    Review the unified diff output. Confirm that read_repair_chance has been
+    renamed to read_repair_probability throughout the configuration file.
+    List the configuration keys that were changed.
+  raw_validation_commands:
+    - python scripts/validate_cassandra_v2_comby.py --task cassandra-comby-02-v2
+  reduced_validation_commands:
+    - python scripts/validate_cassandra_v2_comby.py --task cassandra-comby-02-v2
+  small_model_allowed: true
+  expensive_model_allowed: false
+steps:
+  - step_id: transform
+    name: transform
+    objective: >
+      Use comby to rename read_repair_chance to read_repair_probability in
+      cassandra.yaml and output the unified diff.
+    required_tool: comby
+    allowed_tools: [comby]
+    blocked_tools: [ripgrep, rtk, qmd, fastmod, ast-grep]
+    completion_contract:
+      kind: diff_output
+      fields: [unified_diff]
+    artifact_requirements: [reduced_output.txt]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

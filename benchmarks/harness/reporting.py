@@ -250,6 +250,10 @@ def _compute_tool_variant_metrics(
     reduced_bytes = [
         run.tool_metrics.reduced_bytes for run in relevant if run.tool_metrics.reduced_bytes is not None
     ]
+    raw_tokens = [run.tool_metrics.raw_tokens for run in relevant if run.tool_metrics.raw_tokens is not None]
+    reduced_tokens = [
+        run.tool_metrics.reduced_tokens for run in relevant if run.tool_metrics.reduced_tokens is not None
+    ]
     reduction_ratios = [
         run.tool_metrics.reduction_ratio
         for run in relevant
@@ -265,6 +269,8 @@ def _compute_tool_variant_metrics(
         run_count=len(relevant),
         avg_raw_bytes=sum(raw_bytes) / len(raw_bytes) if raw_bytes else None,
         avg_reduced_bytes=sum(reduced_bytes) / len(reduced_bytes) if reduced_bytes else None,
+        avg_raw_tokens=sum(raw_tokens) / len(raw_tokens) if raw_tokens else None,
+        avg_reduced_tokens=sum(reduced_tokens) / len(reduced_tokens) if reduced_tokens else None,
         avg_reduction_ratio=sum(reduction_ratios) / len(reduction_ratios) if reduction_ratios else None,
         deterministic_pass_rate=(
             sum(1 for passed in deterministic_passes if passed) / len(deterministic_passes)
@@ -327,6 +333,16 @@ def _compute_quality_variant_metrics(
         for run in relevant
         if run.quality_metrics.quality_delta is not None
     ]
+    raw_llm_tokens_list = [
+        run.quality_metrics.raw_llm_tokens
+        for run in relevant
+        if run.quality_metrics.raw_llm_tokens is not None
+    ]
+    reduced_llm_tokens_list = [
+        run.quality_metrics.reduced_llm_tokens
+        for run in relevant
+        if run.quality_metrics.reduced_llm_tokens is not None
+    ]
     return QualityRetentionVariantMetrics(
         variant=variant,
         run_count=len(relevant),
@@ -335,6 +351,8 @@ def _compute_quality_variant_metrics(
         avg_quality_delta=sum(deltas) / len(deltas) if deltas else None,
         llm_call_count_small=sum(run.quality_metrics.llm_call_count_small for run in relevant),
         llm_call_count_expensive=sum(run.quality_metrics.llm_call_count_expensive for run in relevant),
+        avg_raw_llm_tokens=sum(raw_llm_tokens_list) / len(raw_llm_tokens_list) if raw_llm_tokens_list else None,
+        avg_reduced_llm_tokens=sum(reduced_llm_tokens_list) / len(reduced_llm_tokens_list) if reduced_llm_tokens_list else None,
     )
 
 
@@ -387,8 +405,8 @@ def render_quality_retention_markdown(scorecard: QualityRetentionSuiteScorecard)
     lines = [
         "# Quality Retention Scorecard",
         "",
-        "| Family | Variant | Runs | Avg raw quality | Avg reduced quality | Avg quality delta | Small LLM calls | Expensive LLM calls |",
-        "|---|---|---|---|---|---|---|---|",
+        "| Family | Variant | Runs | Avg raw quality | Avg reduced quality | Avg quality delta | Small LLM calls | Expensive LLM calls | Avg raw LLM tokens | Avg reduced LLM tokens |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for family in scorecard.families:
         for metrics in (family.baseline, family.tool_variant):
@@ -397,7 +415,8 @@ def render_quality_retention_markdown(scorecard: QualityRetentionSuiteScorecard)
                 f"{_fmt_metric(metrics.avg_raw_quality_score, 2)} | "
                 f"{_fmt_metric(metrics.avg_reduced_quality_score, 2)} | "
                 f"{_fmt_metric(metrics.avg_quality_delta, 2)} | "
-                f"{metrics.llm_call_count_small} | {metrics.llm_call_count_expensive} |"
+                f"{metrics.llm_call_count_small} | {metrics.llm_call_count_expensive} | "
+                f"{_fmt_metric(metrics.avg_raw_llm_tokens, 0)} | {_fmt_metric(metrics.avg_reduced_llm_tokens, 0)} |"
             )
     return "\n".join(lines) + "\n"
 

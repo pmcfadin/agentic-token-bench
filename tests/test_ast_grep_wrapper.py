@@ -64,12 +64,6 @@ def test_is_available_returns_bool() -> None:
     assert isinstance(wrapper.is_available(), bool)
 
 
-def test_is_available_false_when_binary_not_installed() -> None:
-    # ast-grep is not installed on this machine
-    wrapper = AstGrepWrapper()
-    assert wrapper.is_available() is False
-
-
 def test_is_available_false_for_nonexistent_binary() -> None:
     wrapper = AstGrepWrapper(binary_path="definitely_not_a_real_binary_xyz")
     assert wrapper.is_available() is False

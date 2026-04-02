@@ -28,7 +28,17 @@ success_criteria:
   - no files were modified
 validation_commands:
   - "python scripts/validate_cassandra_v2_ripgrep.py --task cassandra-ripgrep-01-v2"
-input_artifacts: []
+input_artifacts:
+  - name: read_repair_java
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-read-repair/ReadRepair.java
+    target_name: src/java/org/apache/cassandra/service/ReadRepair.java
+    primary: true
+  - name: cassandra_yaml
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-read-repair/cassandra.yaml
+    target_name: conf/cassandra.yaml
+  - name: read_repair_test_java
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-read-repair/ReadRepairTest.java
+    target_name: test/unit/org/apache/cassandra/service/ReadRepairTest.java
 tool_invocation:
   tool_id: ripgrep
   args:

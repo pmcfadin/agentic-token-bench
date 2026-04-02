@@ -409,11 +409,12 @@ def run_tool_task(
 @app.command("run-quality-eval")
 def run_quality_eval(
     task_file: str = typer.Argument(help="Path to the v2 task YAML manifest"),
-    source_run_dir: str = typer.Argument(help="Path to a prior tool-only run artifact directory"),
+    source_run_dir: str = typer.Argument(default="", help="Path to a prior tool-only run artifact directory (or use --latest-run)"),
     agent: str = typer.Option(help="Agent ID used as downstream evaluator"),
     variant: str = typer.Option(default="tool_variant", help="baseline or tool_variant"),
     results_dir: str = typer.Option(default="benchmarks/results", help="Results directory"),
     evaluator_model_class: str = typer.Option(default="small", help="none, small, or expensive"),
+    latest_run: bool = typer.Option(default=False, help="Auto-discover the latest tool-only run directory for this task"),
 ) -> None:
     """Run the downstream quality-evaluation phase for a v2 task."""
     from benchmarks.harness.layered_runner import LayeredBenchmarkRunner
@@ -429,6 +430,22 @@ def run_quality_eval(
     except Exception as exc:  # noqa: BLE001
         typer.echo(f"run-quality-eval: failed to load v2 manifest: {exc}", err=True)
         raise typer.Exit(1) from exc
+
+    if not source_run_dir and not latest_run:
+        typer.echo("run-quality-eval: provide source_run_dir or --latest-run", err=True)
+        raise typer.Exit(1)
+
+    if latest_run:
+        results_path = Path(results_dir)
+        candidates = sorted(results_path.glob(f"{manifest.task_id}__*__tool_only__*"))
+        if not candidates:
+            typer.echo(
+                f"run-quality-eval: no tool_only run found for {manifest.task_id} in {results_dir}",
+                err=True,
+            )
+            raise typer.Exit(1)
+        source_run_dir = str(candidates[-1])
+        typer.echo(f"run-quality-eval: using source run {source_run_dir}")
 
     try:
         adapter = _build_adapter(agent)

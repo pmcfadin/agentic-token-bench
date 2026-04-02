@@ -2,8 +2,7 @@ version: "3"
 
 tasks:
   default:
-    desc: Run setup, benchmarks, and reports
-    deps: [setup]
+    desc: Run benchmarks and generate reports
     cmds:
       - task: bench
       - task: report
@@ -26,6 +25,7 @@ tasks:
       - |
         if ! qmd collection list 2>/dev/null | grep -q cassandra; then
           qmd collection add {{.CHECKOUT}} --name cassandra
+          sqlite3 ~/.cache/qmd/index.sqlite "UPDATE store_collections SET pattern='**/*.{java,yaml,yml}' WHERE name='cassandra';"
           qmd update
         fi
 
@@ -39,12 +39,34 @@ tasks:
   bench:
     desc: Run all v2 tool-only benchmark tasks
     cmds:
-      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-rtk-01.yaml
-      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-rtk-02.yaml
-      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-qmd-01.yaml
-      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-qmd-02.yaml
-      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-ripgrep-01.yaml
-      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-ripgrep-02.yaml
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-rtk-01.yaml --skip-checkout
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-rtk-02.yaml --skip-checkout
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-qmd-01.yaml --skip-checkout
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-qmd-02.yaml --skip-checkout
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-ripgrep-01.yaml --skip-checkout
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-ripgrep-02.yaml --skip-checkout
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-comby-01.yaml --skip-checkout
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-comby-02.yaml --skip-checkout
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-ast-grep-01.yaml --skip-checkout
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-ast-grep-02.yaml --skip-checkout
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-fastmod-01.yaml --skip-checkout
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-fastmod-02.yaml --skip-checkout
+
+  quality-eval:
+    desc: Run quality evaluation on all 12 v2 tasks using the latest tool-only run
+    cmds:
+      - uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-rtk-01.yaml --agent claude --latest-run
+      - uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-rtk-02.yaml --agent claude --latest-run
+      - uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-qmd-01.yaml --agent claude --latest-run
+      - uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-qmd-02.yaml --agent claude --latest-run
+      - uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-ripgrep-01.yaml --agent claude --latest-run
+      - uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-ripgrep-02.yaml --agent claude --latest-run
+      - uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-comby-01.yaml --agent claude --latest-run
+      - uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-comby-02.yaml --agent claude --latest-run
+      - uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-ast-grep-01.yaml --agent claude --latest-run
+      - uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-ast-grep-02.yaml --agent claude --latest-run
+      - uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-fastmod-01.yaml --agent claude --latest-run
+      - uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-fastmod-02.yaml --agent claude --latest-run
 
   report:
     desc: Generate layered scorecards and HTML report
