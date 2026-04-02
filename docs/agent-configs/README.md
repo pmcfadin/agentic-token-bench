@@ -16,24 +16,6 @@ Use these alongside [`docs/integration-guide.md`](../integration-guide.md), whic
 
 ---
 
-## Quick start: ripgrep in Claude Code
-
-Add this to your `CLAUDE.md` to enable ripgrep-first file search:
-
-```markdown
-## ripgrep
-
-Use `rg -l <pattern> .` to find files before reading them.
-Never read an entire directory to find a file — run ripgrep first, then read only matched files.
-Use `rg -n <pattern> <file>` to find the exact line before using qmd.
-```
-
-That's it. Claude will start using ripgrep automatically when searching for files.
-
-For the full set of six tools and all three agents, see the guides above.
-
----
-
 ## Tool selection summary
 
 | Task | Recommended tool |
