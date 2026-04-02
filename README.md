@@ -1,89 +1,267 @@
 # agentic-token-bench
 
+[![GitHub Stars](https://img.shields.io/github/stars/pmcfadin/agentic-token-bench?style=social)](https://github.com/pmcfadin/agentic-token-bench)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**Do token-saving tools actually work in agentic coding workflows?**
+**Do token-saving CLI tools actually work in agentic coding workflows?**
 
-`agentic-token-bench` is an open benchmark that measures whether external tools reduce token usage when AI coding agents work on real codebases — without reducing correctness.
+Every file read, search, or edit in an AI coding session stuffs full content into context — most of it noise. On a capped plan, that means hitting limits mid-task. The fix isn't a bigger plan; it's running a CLI tool first and handing the LLM only the result.
 
-## Key Findings (v1 — ripgrep family)
+`agentic-token-bench` is an open benchmark that measures exactly how much each tool helps — with real before/after numbers on a real codebase. → **[Live results: patrickmcfadin.com/tokenmaxxing](https://patrickmcfadin.com/tokenmaxxing)**
 
-We ran three AI agents (Claude, Codex, Gemini CLI) on identical code-discovery tasks against Apache Cassandra, with and without ripgrep.
+---
 
-| Agent | Token Reduction | Time Reduction | Runs |
-|-------|----------------|----------------|------|
-| **Codex** | **-76.0%** | -66% | 4 |
-| **Claude** | **-12.7%** | -40% | 12 |
-| **Gemini CLI** | partial data | -46% | 4 |
+## Results
 
-Codex showed massive savings; Claude showed modest but consistent improvement. Full results with per-task breakdowns in [docs/findings.md](docs/findings.md).
+Six CLI tools benchmarked against Apache Cassandra. All runs are deterministic — same input, same output, every time.
 
-## How It Works
+| Tool | Avg raw tokens | Avg reduced tokens | Reduction | Deterministic pass rate |
+|------|---------------:|-------------------:|----------:|:-----------------------:|
+| [qmd](https://github.com/tobi/qmd) | 24,437 | 188 | **99.2%** | 100% |
+| [ripgrep](https://github.com/BurntSushi/ripgrep) | 1,043 | 48 | **95.4%** | 100% |
+| [rtk](https://github.com/rtk-ai/rtk) | 12,284 | 648 | **94.7%** | 100% |
+| [ast-grep](https://github.com/ast-grep/ast-grep) | 2,436 | 162 | **93.3%** | 100% |
+| [comby](https://github.com/comby-tools/comby) | 1,879 | 308 | **83.6%** | 100% |
+| [fastmod](https://github.com/facebookincubator/fastmod) | 2,436 | 850 | **65.1%** | 100% |
 
-1. **Task manifests** define coding tasks on a pinned Cassandra checkout
-2. **PATH enforcement** controls which tools the agent can use (baseline removes the tool; variant enforces it)
-3. **Agent adapters** run Claude, Codex, or Gemini CLI and extract reported token counts
-4. **Automated validation** checks the agent's answer against expected results
-5. **Per-agent scorecards** compare baseline vs. tool-variant performance
+**No mocked results.** Every number above comes from running the actual tool against actual Cassandra source files and counting real tokens.
 
-No Docker required — PATH-based isolation is sufficient and reproducible.
+---
 
-## Quick Start
+## The Pattern
 
-### View results
+The core idea: run a deterministic CLI tool first, LLM sees only the result.
 
-Browse the [HTML report](benchmarks/results/report.html) or read [docs/findings.md](docs/findings.md).
-
-### Regenerate from existing data
-
-```bash
-git clone https://github.com/pmcfadin/agentic-token-bench.git
-cd agentic-token-bench
-uv sync
-uv run atb generate-scorecard benchmarks/results
-uv run atb generate-html-report benchmarks/results
+```
+Full file (24,437 tokens)  →  qmd get Gossiper.java:361 -l 24  →  Exact passage (188 tokens)
 ```
 
-### Run your own benchmarks
+The LLM doesn't need the whole file to answer a question about one function. A good CLI tool returns exactly the slice it needs. This benchmark measures whether that's true in practice, and by how much.
 
-```bash
-uv sync
+---
 
-# Qualify an agent
-uv run atb qualify-agent claude
+## Methodology
 
-# Run the ripgrep family (baseline + tool_variant for each task)
-uv run atb run-family ripgrep --agent claude
+The benchmark uses a **deterministic-first, layered** design. The LLM is the last resort, not the first instrument.
 
-# Generate per-agent scorecards
-uv run atb generate-scorecard benchmarks/results
+### Layer 1 — Tool efficacy (deterministic)
+
+The tool runs against fixed input artifacts. The harness measures:
+
+- **Raw bytes / tokens** — the input the LLM would have had to read unassisted
+- **Reduced bytes / tokens** — the tool's output
+- **Reduction ratio** — how much was cut
+- **Deterministic pass rate** — whether the tool produced the correct output on every run
+
+Deterministic checks validate the output directly: exact file paths, exact line ranges, exact rewrite counts, expected diffs. No LLM is involved in Layer 1.
+
+### Layer 2 — Quality retention (LLM judge, small model)
+
+After the tool runs, a small LLM is asked: *can the reduced artifact still answer the original question?* The judge scores both the raw artifact and the reduced artifact, producing:
+
+- **Raw quality score** — can the LLM answer from the unfiltered input?
+- **Reduced quality score** — can the LLM answer from the tool's output?
+- **Quality delta** — the difference (negative means the tool output lost information)
+
+The judge is a small model only. An expensive model is used only when a small model cannot resolve the question — and that escalation is recorded in the run artifact.
+
+### Why two layers?
+
+Token reduction is necessary but not sufficient. A tool that cuts 99% of tokens but also cuts the answer is not useful. Layer 1 measures efficiency; Layer 2 measures whether efficiency came at a correctness cost.
+
+---
+
+## Task Design
+
+Each tool family has two tasks on Apache Cassandra at a pinned commit (`0269fd5`). Tasks are structured as:
+
+```yaml
+tool_invocation:
+  tool_id: qmd
+  args: [get, "src/java/org/apache/cassandra/gms/Gossiper.java:361", -l, "24"]
+  output_artifact: reduced_output.txt
+
+deterministic_checks:
+  - name: exact_gossip_passage
+    command: python scripts/validate_cassandra_v2_qmd.py --task cassandra-qmd-01-v2
+
+quality_evaluation:
+  question: >
+    Return the exact source path, line range, and passage text that describes
+    the gossip-round target-selection logic.
+  small_model_allowed: true
+  expensive_model_allowed: false
 ```
 
-Supported agents: `claude`, `codex`, `gemini-cli`. See [docs/findings.md](docs/findings.md) for full reproduction steps.
+**Input artifacts are fixed.** Each task specifies fixture files — slices of Cassandra source — that are copied into a fresh workspace before each run. The workspace is reset between runs. Results are not sensitive to what's on disk outside the fixture set.
+
+**Validators are exact.** Every family uses machine-checkable validation:
+
+| Family | What the validator checks |
+|--------|--------------------------|
+| `qmd` | Exact source path, line range, and passage text |
+| `ripgrep` | Exact set of matching file paths |
+| `rtk` | Required signal tokens present; noise fields absent |
+| `fastmod` | Exact replacement count; no remaining original strings |
+| `ast-grep` | Exact AST-aware rewrite count; no unintended matches |
+| `comby` | Exact structural replacement count; diff correctness |
+
+No fuzzy scoring in Layer 1. A task either passes its deterministic checks or it doesn't.
+
+---
+
+## Tool Enforcement
+
+For legacy agent runs, tool availability is enforced by the harness, not by instructions to the agent.
+
+**PATH control.** The harness constructs a temporary directory with only the allowed tools on `PATH`. A tool that is not in the allowed set for a given step is physically absent — the agent cannot call it regardless of what it decides to do.
+
+**Wrapper mediation.** Every tool is wrapped. The wrapper passes through stdout and stderr faithfully, and records a structured invocation event to `tool_invocations.jsonl` in the run artifact directory. Required-tool violations are detectable from the trace.
+
+**Validity classification.** A run is invalid — and excluded from scorecards — if:
+
+- Reported tokens are missing or could not be extracted
+- A required tool was not actually invoked
+- A blocked tool was invoked
+- Validation commands did not execute
+
+Invalid runs are recorded but never aggregated. The exclusion reason is written to the run record.
+
+---
+
+## Token Accounting
+
+**Reported values only (for legacy agent runs).** The official token metric is the count reported by the agent CLI itself. Estimated or inferred counts are never used.
+
+**Evidence files.** Every run artifact directory contains `token_evidence.txt` — the raw snippet from agent output from which token counts were extracted. Third parties can inspect this file to verify that reported counts come directly from agent output, not from estimation.
+
+**v2 tool-only runs.** In deterministic-first v2 runs, token counts are measured by tokenizing the raw input artifact and the tool output artifact directly using the same tokenizer. No agent CLI is involved.
+
+---
+
+## Run Artifacts
+
+Each run writes a directory under `benchmarks/results/` with:
+
+```
+cassandra-qmd-01-v2__tool_variant__tool_only__20260402-170617/
+├── run.json                  # Full run record (schema in schemas/run.schema.json)
+├── raw_input.txt             # The full input the LLM would have seen unassisted
+├── reduced_output.txt        # The tool's output
+├── tool_invocations.jsonl    # Structured tool invocation trace
+├── validation.json           # Deterministic check results
+└── token_evidence.txt        # Raw token count evidence (legacy agent runs)
+```
+
+Scorecards are generated from these artifacts:
+
+```
+benchmarks/results/
+├── tool-efficacy-scorecard.json     # Layer 1 results (deterministic)
+├── quality-retention-scorecard.json # Layer 2 results (LLM judge)
+├── benchmark-data.json              # Compact export for the public results page
+└── layered-report.html              # Full HTML report
+```
+
+---
+
+## Running the Benchmark
+
+### Prerequisites
+
+```bash
+# Python 3.12, managed by uv
+uv sync
+
+# Clone Cassandra at the pinned commit and index it
+task setup
+```
+
+### Run all tools
+
+```bash
+task bench          # Runs all 12 v2 tool-only tasks
+task report         # Generates scorecards and HTML report
+task export-data    # Writes benchmark-data.json for the public page
+```
+
+### Run a single tool family
+
+```bash
+uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-qmd-01.yaml --skip-checkout
+uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-qmd-02.yaml --skip-checkout
+```
+
+### Run quality evaluation (Layer 2)
+
+```bash
+uv run atb run-quality-eval benchmarks/tasks/cassandra/v2/cassandra-qmd-01.yaml \
+  --agent claude --latest-run
+```
+
+### Generate reports
+
+```bash
+uv run atb generate-layered-scorecards
+uv run atb generate-layered-html-report
+```
+
+---
 
 ## Project Structure
 
 | Directory | Purpose |
 |-----------|---------|
-| `benchmarks/harness/` | Core harness: runner, CLI, reporting |
-| `benchmarks/tasks/` | Task manifests (YAML) |
-| `benchmarks/results/` | Run artifacts and scorecards |
+| `benchmarks/harness/` | Core harness: runner, CLI, reporting, models |
+| `benchmarks/tasks/cassandra/v2/` | v2 task manifests (YAML) |
+| `benchmarks/tasks/cassandra/fixtures/` | Fixed input artifacts (Cassandra source slices) |
+| `benchmarks/results/` | Run artifacts, scorecards, HTML report |
 | `agents/` | Agent adapters (Claude, Codex, Gemini CLI) |
-| `tools/` | Tool wrappers (ripgrep, rtk, fastmod, qmd, ast-grep, comby) |
+| `tools/` | Tool wrappers |
+| `scripts/` | Per-family deterministic validators |
+| `schemas/` | Public JSON schemas for tasks and run records |
 | `docs/` | Methodology, findings, and design docs |
 
-## v1 Scope
+Key docs:
 
-- **Repository**: Apache Cassandra (Java), pinned commit
-- **Tool family tested**: ripgrep (code discovery)
-- **Agents tested**: Claude, Codex, Gemini CLI
-- **Pending families**: qmd, rtk, fastmod, ast-grep, comby (task definitions ready, live runs planned for v2)
+- [`docs/methodology.md`](docs/methodology.md) — full v2 methodology spec
+- [`docs/findings.md`](docs/findings.md) — v1 findings (ripgrep family, live agent runs)
+- [`docs/redesign.md`](docs/redesign.md) — v2 design rationale and implementation plan
+- [`docs/task-authoring-guide.md`](docs/task-authoring-guide.md) — how to write new tasks
+
+---
+
+## Limitations
+
+**Not universal.** Results describe tool effects on Apache Cassandra under specific task shapes. The benchmark does not claim that token savings observed here generalize to other repositories, languages, task types, or agent configurations.
+
+**One repository.** All v2 comparisons are on Cassandra at one pinned commit. Repository-level effects are not separated from tool effects.
+
+**Reported tokens, not ground-truth tokens.** For legacy agent runs, the official metric is what the agent CLI reports. `token_evidence.txt` allows inspection but does not correct for agent-side reporting differences.
+
+**v2 quality retention is early.** The quality-retention scorecard has 2 runs per family. The tool-efficacy scorecard has 8–18 runs per family. Quality scores should be read as directional, not definitive, at current run counts.
+
+---
+
+## Submit a Tool
+
+Know a CLI tool that saves tokens in agentic coding workflows?
+
+Criteria:
+- Takes file or codebase input
+- Produces smaller, targeted output (diff, filtered results, index)
+- Deterministic — same input, same output, every time
+
+**[Open an issue with the tool submission template →](https://github.com/pmcfadin/agentic-token-bench/issues/new?template=submit-tool.yml)**
+
+---
 
 ## Tests
 
 ```bash
-uv run pytest          # 767 tests
+uv run pytest          # 466 tests
 uv run ruff check .    # Lint
+uv run ruff format .   # Format
 ```
 
 ## License
