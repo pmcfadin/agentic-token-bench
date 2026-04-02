@@ -1,0 +1,78 @@
+schema_version: 2
+deterministic_first: true
+version: v2
+task_id: cassandra-ripgrep-02-v2
+title: Return the exact SizeTieredCompactionStrategy reference set
+family: ripgrep
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+benchmark_mode: deterministic-first
+objective: >
+  Use ripgrep to identify the source files that reference
+  SizeTieredCompactionStrategy. Return the exact set of file paths only.
+task_description: >
+  Apache Cassandra ships several compaction strategies, one of which is
+  SizeTieredCompactionStrategy (STCS).
+
+  Your task is to locate the source files in the Cassandra repository that
+  reference SizeTieredCompactionStrategy and return the exact path set.
+  Do not modify any files and do not include commentary.
+success_criteria:
+  - all required reference paths are identified
+  - no hallucinated paths are included
+  - no files were modified
+validation_commands:
+  - "python scripts/validate_cassandra_v2_ripgrep.py --task cassandra-ripgrep-02-v2"
+input_artifacts: []
+tool_invocation:
+  tool_id: ripgrep
+  args:
+    - -l
+    - SizeTieredCompactionStrategy
+    - .
+  output_artifact: reduced_output.txt
+  baseline_strategy: identity
+  timeout_seconds: 120
+deterministic_checks:
+  - name: exact_stcs_reference_set
+    command: python scripts/validate_cassandra_v2_ripgrep.py --task cassandra-ripgrep-02-v2
+quality_evaluation:
+  question: >
+    Return the exact set of source file paths that reference
+    SizeTieredCompactionStrategy.
+  raw_validation_commands:
+    - python scripts/validate_cassandra_v2_ripgrep.py --task cassandra-ripgrep-02-v2
+  reduced_validation_commands:
+    - python scripts/validate_cassandra_v2_ripgrep.py --task cassandra-ripgrep-02-v2
+  small_model_allowed: true
+  expensive_model_allowed: false
+  escalation_note: >
+    Escalate only if the exact path set is ambiguous after deterministic checks.
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Use ripgrep to search the repository for files containing the string
+      SizeTieredCompactionStrategy. Record the complete matching path set.
+    required_tool: ripgrep
+    allowed_tools: [ripgrep]
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [candidate_paths]
+    artifact_requirements: [step_trace]
+  - step_id: report
+    name: report
+    objective: >
+      Produce the final structured answer with the exact file path set.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby, ripgrep]
+    completion_contract:
+      kind: structured_answer
+      fields: [reference_paths]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

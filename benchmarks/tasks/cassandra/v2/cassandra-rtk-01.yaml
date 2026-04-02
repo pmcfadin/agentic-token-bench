@@ -1,0 +1,100 @@
+schema_version: 2
+deterministic_first: true
+version: v2
+task_id: cassandra-rtk-01-v2
+title: Extract the exact build failure from noisy Cassandra build output
+family: rtk
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+benchmark_mode: deterministic-first
+objective: >
+  Use rtk to compress a pre-captured Cassandra build log and preserve the
+  exact javac failure signal. Do not repair the build.
+task_description: >
+  A pre-captured Apache Cassandra build log has been placed in your workspace
+  at `cassandra-build-failure.log`. The log was produced by an `ant build`
+  invocation and contains enough noise that the real failure signal should be
+  compressed out.
+
+  Your task is to:
+
+  (1) Use rtk to compress `cassandra-build-failure.log`.
+
+  (2) Preserve the exact source file, line number, and missing symbol from the
+      compiler error.
+
+  (3) Return the compressed output and the failure details only. Do not edit
+      any files.
+success_criteria:
+  - compressed output preserves the `cannot find symbol` failure
+  - the failing source file and line number are identified
+  - the missing symbol name is identified exactly
+  - no files are modified
+validation_commands:
+  - "python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-01-v2"
+fixture_files:
+  - benchmarks/tasks/cassandra/fixtures/cassandra-build-failure.log
+input_artifacts:
+  - name: build_log
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-build-failure.log
+    target_name: cassandra-build-failure.log
+    primary: true
+tool_invocation:
+  tool_id: rtk
+  args:
+    - read
+    - cassandra-build-failure.log
+  output_artifact: reduced_output.txt
+  baseline_strategy: identity
+  timeout_seconds: 120
+deterministic_checks:
+  - name: preserve_build_failure
+    command: python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-01-v2
+quality_evaluation:
+  question: >
+    Identify the failing source file, line number, missing symbol, and the
+    exact compiler error from this Cassandra build output.
+  raw_validation_commands:
+    - python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-01-v2
+  reduced_validation_commands:
+    - python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-01-v2
+  small_model_allowed: true
+  expensive_model_allowed: false
+  escalation_note: >
+    Escalate only if the compressed output loses the exact source line,
+    symbol, or error anchor.
+output_contract:
+  required_fields:
+    - compressed_output
+    - failure_file
+    - failure_line
+    - failure_symbol
+steps:
+  - step_id: compress
+    name: compress
+    objective: >
+      Use rtk to compress `cassandra-build-failure.log` while preserving the
+      exact javac failure line and missing symbol name.
+    required_tool: rtk
+    allowed_tools: [rtk]
+    blocked_tools: [ripgrep, qmd, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [compressed_output]
+    artifact_requirements: [step_trace]
+  - step_id: report
+    name: report
+    objective: >
+      Produce the final structured answer with the compressed output and the
+      exact build failure details.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [compressed_output, failure_file, failure_line, failure_symbol]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

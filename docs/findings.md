@@ -1,6 +1,12 @@
-# Findings: Agentic Token Bench v1
+# Findings: Agentic Token Bench Legacy v1
 
-> **Data basis**: The ripgrep family results in this document are based on live agent executions across three agents (claude, codex, gemini-cli) against a real Cassandra checkout. Claude ran 12 runs (3 repetitions x 2 tasks x 2 variants). Codex and Gemini CLI each ran 4 runs (1 repetition x 2 tasks x 2 variants). The remaining five tool families (qmd, rtk, fastmod, ast-grep, comby) have not yet completed live runs; their sections are retained from the v1 fixture baseline and are marked accordingly.
+> **Data basis**: The ripgrep family results in this document are based on live
+> agent executions across three agents (claude, codex, gemini-cli) against a
+> real Cassandra checkout. Claude ran 12 runs (3 repetitions x 2 tasks x 2
+> variants). Codex and Gemini CLI each ran 4 runs (1 repetition x 2 tasks x 2
+> variants). The remaining five tool families (qmd, rtk, fastmod, ast-grep,
+> comby) have not yet completed live runs; their sections are retained from the
+> legacy v1 fixture baseline and are marked accordingly.
 
 > **Agents with live data**: `claude` (12 runs), `codex` (4 runs), `gemini-cli` (4 runs)
 
@@ -12,9 +18,16 @@
 
 ## 1. Executive Summary
 
-This benchmark measured whether six external tools — ripgrep, qmd, rtk, fastmod, ast-grep, and comby — reduce reported token usage in agentic coding tasks on Apache Cassandra without reducing correctness.
+This legacy v1 benchmark measured whether six external tools — ripgrep, qmd,
+rtk, fastmod, ast-grep, and comby — reduce reported token usage in agentic
+coding tasks on Apache Cassandra without reducing correctness.
 
-**Current status**: Live benchmark runs have been completed for the ripgrep family only, across three agents. The remaining five families are pending live runs. The ripgrep results are the first empirical data from real agent executions under this benchmark contract.
+**Current status**: Live benchmark runs have been completed for the ripgrep
+family only, across three agents. The remaining five families are pending live
+runs. The ripgrep results are the first empirical data from real agent
+executions under the legacy end-to-end benchmark contract. V2 will keep the
+same families but split deterministic tool efficacy from downstream quality
+retention.
 
 ### ripgrep family: live results across three agents
 
@@ -65,7 +78,9 @@ The ripgrep family shows meaningful token and time reductions for Claude and Cod
 
 ## 2. Methodology Summary
 
-This benchmark measures whether specific external tools reduce reported token usage in agentic coding tasks on Apache Cassandra without reducing correctness.
+This legacy benchmark measures whether specific external tools reduce reported
+token usage in agentic coding tasks on Apache Cassandra without reducing
+correctness.
 
 Key design choices:
 
@@ -76,6 +91,10 @@ Key design choices:
 - **Three repetitions per variant (target)**: each task × variant combination targets three repetitions; single-rep runs are noted where only one repetition was available
 - **Automated validation first**: human review is reserved for borderline partial passes
 - **Agent qualification gate**: no agent appears in official results without passing all four qualification gates
+
+The v2 methodology keeps the same families but changes the official reading of
+those runs: tool efficacy is measured first, and downstream quality retention is
+reported separately when an LLM judge is needed.
 
 For the complete method, see [docs/methodology.md](methodology.md).
 
@@ -148,58 +167,21 @@ Each subsection covers one official tool family. Section 3.1 contains live data.
 
 ---
 
-### 3.2 qmd
+### 3.2–3.6 Legacy Fixture Families
 
-> **Not yet measured with live runs.** This section will be updated when live runs complete.
+The following five tool families have task definitions and validation scripts
+ready but have not yet completed live runs. They remain in this document as
+legacy fixture baselines until v2 live runs replace them.
 
-**Purpose**: Measure retrieval efficiency when the agent must answer a repo or documentation question from a narrow passage, rather than reading large files.
+| Family | Category | Purpose |
+|---|---|---|
+| qmd | retrieval | Measure retrieval efficiency from narrow doc passages vs. broad file reads |
+| rtk | compression | Measure whether shell-output compression reduces token load |
+| fastmod | transformation | Measure token effects on repetitive text-shaped changes (renames, config migrations) |
+| ast-grep | transformation | Measure token effects on syntax-shaped rewrites (call-site changes, API migrations) |
+| comby | transformation | Measure token effects on structural rewrites using comby templates |
 
-**Baseline**: raw file reading and ordinary shell navigation.
-**Tool variant**: step requires qmd; tool is enforced via PATH restriction.
-
----
-
-### 3.3 rtk
-
-> **Not yet measured with live runs.** This section will be updated when live runs complete.
-
-**Purpose**: Measure whether shell-output compression reduces token load without hiding critical errors in build, test, or validation output.
-
-**Baseline**: raw command output delivered to the agent.
-**Tool variant**: step requires rtk; tool is enforced via PATH restriction.
-
----
-
-### 3.4 fastmod
-
-> **Not yet measured with live runs.** This section will be updated when live runs complete.
-
-**Purpose**: Measure token and correctness effects on repetitive text-shaped changes such as renames and config key migrations.
-
-**Baseline**: agent performs edits without fastmod.
-**Tool variant**: step requires fastmod; tool is enforced via PATH restriction.
-
----
-
-### 3.5 ast-grep
-
-> **Not yet measured with live runs.** This section will be updated when live runs complete.
-
-**Purpose**: Measure token and correctness effects on syntax-shaped rewrites such as call-site changes and structured API migrations in Java source.
-
-**Baseline**: agent performs equivalent edits without ast-grep.
-**Tool variant**: step requires ast-grep; tool is enforced via PATH restriction.
-
----
-
-### 3.6 comby
-
-> **Not yet measured with live runs.** This section will be updated when live runs complete.
-
-**Purpose**: Measure token and correctness effects on structural but tool-expressible rewrites where comby templates fit cleanly.
-
-**Baseline**: agent performs equivalent edits without comby.
-**Tool variant**: step requires comby; tool is enforced via PATH restriction.
+Each family follows the same controlled comparison: baseline (tool removed from PATH) vs. tool variant (tool enforced via PATH).
 
 ---
 
@@ -241,25 +223,29 @@ Claude ran 3 repetitions per variant (the full target), giving averaged results.
 
 The Gemini CLI ripgrep-01 baseline run returned 0 tokens due to a token extraction defect (issue #46). This affects the completeness of Gemini CLI results until the bug is fixed and the run is re-executed.
 
-### What v1 does NOT claim
+### What legacy v1 does NOT claim
 
-- **Not a universal benchmark.** Results are measured on Apache Cassandra (Java) only. Generalization to other repositories, languages, or ecosystems is not supported by v1 data.
+- **Not a universal benchmark.** Results are measured on Apache Cassandra (Java) only. Generalization to other repositories, languages, or ecosystems is not supported by legacy v1 data.
 
 - **Not a model comparison.** This benchmark measures tool effects on a given qualified agent's token usage. It is not a comparison of language models against each other.
 
 - **Not estimated tokens.** All token counts use reported values from the agent CLI. Estimated or computed token counts do not appear in official tables.
 
-- **Not a claim of superiority on novel tasks.** Results reflect the specific task shapes defined in this v1 task suite. Task shapes were chosen to match each tool's intended use case. Performance on dissimilar tasks is not covered.
+- **Not a claim of superiority on novel tasks.** Results reflect the specific task shapes defined in this legacy v1 task suite. Task shapes were chosen to match each tool's intended use case. Performance on dissimilar tasks is not covered.
 
 ### Single repo, narrow task shapes
 
-V1 tests one repository (Cassandra) and two tightly scoped ripgrep tasks (with ten more task pairs pending across five families). The benchmark is intentionally narrow. Broader claims about tool effectiveness across repos, agents, or task types require additional data beyond what is currently available.
+Legacy v1 tests one repository (Cassandra) and two tightly scoped ripgrep tasks
+(with ten more task pairs pending across five families). The benchmark is
+intentionally narrow. Broader claims about tool effectiveness across repos,
+agents, or task types require additional data beyond what is currently
+available.
 
 ---
 
 ## 6. Reproduction Steps
 
-To rerun the official benchmark suite:
+To rerun the legacy benchmark suite:
 
 1. **Install dependencies**
 
@@ -269,35 +255,37 @@ To rerun the official benchmark suite:
 
 2. **Verify tool availability**
 
-   Ensure the following tools are installed and on your PATH:
-   ripgrep, qmd, rtk, fastmod, ast-grep, comby
+   For legacy v1 (ripgrep family only): ensure `rg` (ripgrep) is installed.
+   For the full suite: ripgrep, qmd, rtk, fastmod, ast-grep (sg), comby.
 
-3. **Qualify agents**
+3. **Qualify an agent**
 
    ```bash
-   uv run atb qualify-agent --agent claude
-   uv run atb qualify-agent --agent codex
-   uv run atb qualify-agent --agent gemini-cli
+   uv run atb qualify-agent claude
    ```
 
-   Only qualified agents may produce official runs.
+   Supported agents: `claude`, `codex`, `gemini-cli`. Only qualified agents may produce official runs.
 
-4. **Run the full official suite for a qualified agent**
+4. **Run the ripgrep family**
 
    ```bash
-   uv run atb run-suite --agent <agent-id>
+   uv run atb run-family ripgrep --agent claude
    ```
 
-5. **Generate the scorecard**
+   Or run the full official suite: `uv run atb run-suite --agent claude`
+
+5. **Generate per-agent scorecards**
 
    ```bash
-   uv run atb generate-scorecard --agent <agent-id>
+   uv run atb generate-scorecard benchmarks/results
    ```
 
-6. **Validate schemas**
+   This auto-detects agents and writes per-agent scorecards (e.g. `scorecard-claude.json`).
+
+6. **Generate the HTML report**
 
    ```bash
-   uv run atb validate-schemas
+   uv run atb generate-html-report benchmarks/results
    ```
 
 The pinned Cassandra commit used for runs is `0269fd5665751e8a6d8eab852e0f66c142b10ee6`. Reproduction requires the same commit. The commit is recorded in each run artifact under `benchmarks/results/<run-id>/run.json` in the `repo_commit` field.
@@ -319,6 +307,7 @@ Each agent's qualification status, failure reasons (if any), and evidence paths 
 ### Appendix B: Appendix Workflows (Track B)
 
 Mixed-tool appendix workflows are located in `benchmarks/tasks/cassandra/appendix/`. These workflows show tool composition in realistic coding flows but are not the primary basis for tool-specific claims.
+They are legacy appendix evidence, not the official v2 methodology.
 
 ### Appendix C: Official Task Manifests
 

@@ -4,20 +4,20 @@ family: rtk
 repo: cassandra
 pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
 objective: >
-  Run the Cassandra build and use rtk to compress the output, then identify
+  Use rtk to compress a pre-captured Cassandra build log, then identify
   the single actionable failure that must be addressed before the build can
   succeed.
 task_description: >
-  Apache Cassandra is built with Apache Ant. A `ant build` invocation produces
-  verbose output that mixes informational messages with the true failure reason.
+  A pre-captured Apache Cassandra build log has been placed in your workspace
+  at `cassandra-build-failure.log`. The log was produced by an `ant build`
+  invocation. It mixes informational messages with the true failure reason.
+
   Your task is to:
 
-  (1) Run the build command `ant build` in the Cassandra repository root.
+  (1) Use rtk to compress `cassandra-build-failure.log` so that only the
+  actionable failure is surfaced.
 
-  (2) Use rtk to compress the raw build output so that only the actionable
-  failure is surfaced.
-
-  (3) Identify the specific error or failure message that must be resolved.
+  (2) Identify the specific error message that must be resolved.
 
   Do not attempt to fix the build. Produce a structured answer with the
   compressed output, the single actionable failure message, and the component
@@ -32,24 +32,14 @@ validation_commands:
 human_review_triggers:
   - "compressed output does not contain the failure line"
   - "multiple conflicting failure messages reported"
+fixture_files:
+  - benchmarks/tasks/cassandra/fixtures/cassandra-build-failure.log
 steps:
-  - step_id: discover
-    name: discover
-    objective: >
-      Run `ant build` in the repository root to produce build output. Capture
-      the full raw output for the next step.
-    required_tool: null
-    allowed_tools: []
-    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
-    completion_contract:
-      kind: structured_answer
-      fields: [raw_output_path]
-    artifact_requirements: [step_trace]
   - step_id: analyze
     name: analyze
     objective: >
-      Use rtk to compress the raw build output. Identify the single actionable
-      failure message from the compressed result.
+      Use rtk to compress `cassandra-build-failure.log` in your workspace.
+      Identify the single actionable failure message from the compressed result.
     required_tool: rtk
     allowed_tools: [rtk]
     blocked_tools: [ripgrep, qmd, fastmod, ast-grep, comby]

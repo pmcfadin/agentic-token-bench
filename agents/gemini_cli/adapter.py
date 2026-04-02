@@ -29,8 +29,9 @@ class GeminiCliAdapter(AgentAdapter):
             ``"/opt/homebrew/bin/gemini"``) for reproducibility.
     """
 
-    def __init__(self, binary_path: str = "gemini") -> None:
+    def __init__(self, binary_path: str = "gemini", model: str | None = None) -> None:
         self.binary_path = binary_path
+        self._model = model
 
     # ------------------------------------------------------------------
     # AgentAdapter interface
@@ -127,6 +128,8 @@ class GeminiCliAdapter(AgentAdapter):
             "--output-format",
             "stream-json",
         ]
+        if self._model:
+            cmd += ["--model", self._model]
 
         env: dict[str, str] | None = step_env if step_env else None
 

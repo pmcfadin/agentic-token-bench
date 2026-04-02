@@ -1,0 +1,96 @@
+schema_version: 2
+deterministic_first: true
+version: v2
+task_id: cassandra-qmd-02-v2
+title: Retrieve the exact compaction-throughput passage from cassandra.yaml
+family: qmd
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+benchmark_mode: deterministic-first
+objective: >
+  Use qmd to retrieve the exact configuration passage that defines Cassandra's
+  compaction throughput default. Return the source path, line range, and
+  passage text only.
+task_description: >
+  The Cassandra configuration file has been placed in your workspace at
+  `cassandra.yaml`.
+
+  Retrieve the narrowest passage that covers the compaction throughput
+  setting, its default value, and the units used in the value.
+
+  Return the exact passage text, source path, and line range. Do not summarize.
+success_criteria:
+  - passage text is copied from cassandra.yaml
+  - source path is cassandra.yaml
+  - line range matches the quoted passage
+  - no files were modified
+validation_commands:
+  - "python scripts/validate_cassandra_v2_qmd.py --task cassandra-qmd-02-v2"
+fixture_files:
+  - benchmarks/tasks/cassandra/fixtures/cassandra.yaml
+input_artifacts:
+  - name: cassandra_config
+    source: benchmarks/tasks/cassandra/fixtures/cassandra.yaml
+    target_name: cassandra.yaml
+    primary: true
+tool_invocation:
+  tool_id: qmd
+  args:
+    - get
+    - conf/cassandra.yaml:1244
+    - -l
+    - "8"
+  output_artifact: reduced_output.txt
+  baseline_strategy: identity
+  timeout_seconds: 120
+deterministic_checks:
+  - name: exact_compaction_passage
+    command: python scripts/validate_cassandra_v2_qmd.py --task cassandra-qmd-02-v2
+quality_evaluation:
+  question: >
+    Return the exact source path, line range, and passage text that defines
+    compaction throughput and its default units.
+  raw_validation_commands:
+    - python scripts/validate_cassandra_v2_qmd.py --task cassandra-qmd-02-v2
+  reduced_validation_commands:
+    - python scripts/validate_cassandra_v2_qmd.py --task cassandra-qmd-02-v2
+  small_model_allowed: true
+  expensive_model_allowed: false
+  escalation_note: >
+    Escalate only if exact line-accurate retrieval cannot be verified from the answer.
+output_contract:
+  required_fields:
+    - passage_text
+    - source_path
+    - line_range
+  expected_source_path: cassandra.yaml
+  expected_line_range: "1244-1251"
+steps:
+  - step_id: retrieve
+    name: retrieve
+    objective: >
+      Use qmd to retrieve the narrowest passage from `cassandra.yaml` that
+      defines the compaction throughput setting and its default value.
+    required_tool: qmd
+    allowed_tools: [qmd]
+    blocked_tools: [ripgrep, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [passage_text, source_path, line_range]
+    artifact_requirements: [step_trace]
+  - step_id: report
+    name: report
+    objective: >
+      Produce the final structured answer with the passage text, source path,
+      and exact line range. No interpretation is needed.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [passage_text, source_path, line_range]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

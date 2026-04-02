@@ -1,0 +1,84 @@
+schema_version: 2
+deterministic_first: true
+version: v2
+task_id: cassandra-ripgrep-01-v2
+title: Return the exact read repair source, config, and test paths
+family: ripgrep
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+benchmark_mode: deterministic-first
+objective: >
+  Use ripgrep to identify the exact read repair implementation source file,
+  the configuration reference, and one validating test file. Return the path
+  strings exactly and do not add interpretation.
+task_description: >
+  Apache Cassandra exposes a configurable read repair setting that controls
+  background read repair behavior.
+
+  Your task is to locate:
+  (1) the primary Java source file that implements or enforces this setting,
+  (2) the corresponding configuration file and key,
+  (3) one test file that exercises or validates this setting.
+
+  Return the exact path strings and config key only. Do not modify any files.
+success_criteria:
+  - correct source file path identified
+  - correct configuration file and key identified
+  - correct test file path identified
+  - no files were modified
+validation_commands:
+  - "python scripts/validate_cassandra_v2_ripgrep.py --task cassandra-ripgrep-01-v2"
+input_artifacts: []
+tool_invocation:
+  tool_id: ripgrep
+  args:
+    - -l
+    - read_repair_chance
+    - .
+  output_artifact: reduced_output.txt
+  baseline_strategy: identity
+  timeout_seconds: 120
+deterministic_checks:
+  - name: exact_read_repair_reference_set
+    command: python scripts/validate_cassandra_v2_ripgrep.py --task cassandra-ripgrep-01-v2
+quality_evaluation:
+  question: >
+    Return the exact source path, configuration path and key, and one test path
+    related to Cassandra read repair.
+  raw_validation_commands:
+    - python scripts/validate_cassandra_v2_ripgrep.py --task cassandra-ripgrep-01-v2
+  reduced_validation_commands:
+    - python scripts/validate_cassandra_v2_ripgrep.py --task cassandra-ripgrep-01-v2
+  small_model_allowed: true
+  expensive_model_allowed: false
+  escalation_note: >
+    Escalate only if the retrieved reference set is ambiguous after deterministic checks.
+steps:
+  - step_id: discover
+    name: discover
+    objective: >
+      Use ripgrep to locate candidate source files, configuration references,
+      and test files related to read repair in the Cassandra source tree.
+    required_tool: ripgrep
+    allowed_tools: [ripgrep]
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [candidate_source_paths, candidate_config_paths, candidate_test_paths]
+    artifact_requirements: [step_trace]
+  - step_id: report
+    name: report
+    objective: >
+      Produce the final structured answer with the exact source path,
+      configuration path, configuration key, and test path.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [qmd, rtk, fastmod, ast-grep, comby, ripgrep]
+    completion_contract:
+      kind: structured_answer
+      fields: [source_path, config_path, config_key, test_path]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

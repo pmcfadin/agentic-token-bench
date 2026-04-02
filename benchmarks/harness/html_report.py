@@ -13,6 +13,11 @@ from statistics import mean
 import yaml
 
 from benchmarks.harness.models import RunRecord, RunValidity, Variant, ValidationStatus
+from benchmarks.harness.reporting import (
+    generate_quality_retention_scorecard,
+    generate_tool_efficacy_scorecard,
+    normalize_agent_id,
+)
 
 _VARIANTS = (Variant.baseline, Variant.tool_variant)
 
@@ -171,7 +176,7 @@ def _delta_and_reduction(
 
 
 def _group_runs(runs: list[RunRecord]) -> tuple[list[str], dict[str, dict[str, dict[Variant, list[RunRecord]]]]]:
-    agents = sorted({run.agent_id for run in runs})
+    agents = sorted({normalize_agent_id(run.agent_id) for run in runs})
     grouped: dict[str, dict[str, dict[Variant, list[RunRecord]]]] = defaultdict(
         lambda: defaultdict(lambda: defaultdict(list))
     )
@@ -204,7 +209,7 @@ def _build_family_comparisons(
                     run
                     for variant_runs in grouped[family][task_id].values()
                     for run in variant_runs
-                    if run.agent_id == agent_id
+                    if normalize_agent_id(run.agent_id) == agent_id
                 ]
                 if not agent_runs:
                     continue
@@ -212,12 +217,12 @@ def _build_family_comparisons(
                 baseline_runs = [
                     run
                     for run in grouped[family][task_id][Variant.baseline]
-                    if run.agent_id == agent_id
+                    if normalize_agent_id(run.agent_id) == agent_id
                 ]
                 tool_runs = [
                     run
                     for run in grouped[family][task_id][Variant.tool_variant]
-                    if run.agent_id == agent_id
+                    if normalize_agent_id(run.agent_id) == agent_id
                 ]
 
                 baseline = _aggregate_metrics(baseline_runs)
@@ -263,7 +268,7 @@ def _build_family_comparisons(
 def _aggregate_by_agent(runs: list[RunRecord]) -> dict[str, dict[Variant, Metrics]]:
     by_agent: dict[str, dict[Variant, list[RunRecord]]] = defaultdict(lambda: defaultdict(list))
     for run in runs:
-        by_agent[run.agent_id][run.variant].append(run)
+        by_agent[normalize_agent_id(run.agent_id)][run.variant].append(run)
 
     result: dict[str, dict[Variant, Metrics]] = {}
     for agent_id, variants in by_agent.items():
@@ -378,27 +383,8 @@ def render_html_report(
     invalid_runs = len(runs) - len(valid_runs)
     task_index = load_task_index(tasks_dir)
     families = _build_family_comparisons(valid_runs, task_index)
-    agents = sorted({run.agent_id for run in valid_runs})
+    agents = sorted({normalize_agent_id(run.agent_id) for run in valid_runs})
     by_agent = _aggregate_by_agent(valid_runs)
-
-    overall_by_variant = {
-        variant: _aggregate_metrics([run for run in valid_runs if run.variant == variant])
-        for variant in _VARIANTS
-    }
-
-    overall_delta: float | None = None
-    overall_reduction: float | None = None
-    overall_delta, overall_reduction = _delta_and_reduction(
-        overall_by_variant[Variant.baseline].avg_tokens,
-        overall_by_variant[Variant.tool_variant].avg_tokens,
-    )
-
-    overall_scale_candidates = [
-        metrics.avg_tokens
-        for metrics in overall_by_variant.values()
-        if metrics.avg_tokens is not None
-    ]
-    overall_scale = max(overall_scale_candidates) if overall_scale_candidates else None
 
     task_count = len({run.task_id for run in valid_runs})
     family_count = len(families)
@@ -433,19 +419,6 @@ def render_html_report(
     )
 
     family_sections = "".join(_render_family_section(family) for family in families)
-
-    overall_before = _render_bar(
-        overall_by_variant[Variant.baseline].avg_tokens,
-        overall_scale,
-        "baseline",
-        "Before",
-    )
-    overall_after = _render_bar(
-        overall_by_variant[Variant.tool_variant].avg_tokens,
-        overall_scale,
-        "tool",
-        "After",
-    )
 
     source_note = (
         f"<div class=\"source-note\">Source: {escape(str(source_results_dir))}</div>"
@@ -913,9 +886,9 @@ def render_html_report(
         )}
         {_render_metric_card("Validation", overall_validation_text, "Pass rate across valid runs", "amber")}
         {_render_metric_card(
-            "Reduction",
-            _format_pct(overall_reduction),
-            f"Delta: {_format_number(overall_delta, 0)} tokens",
+            "Agents tested",
+            ", ".join(agents),
+            "See per-agent rows below for reductions",
             "amber",
         )}
       </div>
@@ -926,14 +899,10 @@ def render_html_report(
     <section class="summary-panel">
       <div class="section-heading">
         <div class="section-kicker">Overview</div>
-        <h2>Before / after across all valid runs</h2>
-        <p class="subtle">These totals are aggregated from the selected results directory. The baseline bars are blue; tool_variant bars are amber.</p>
+        <h2>Per-agent token comparison</h2>
+        <p class="subtle">Each agent operates at a different token scale, so cross-agent averages are not meaningful. The table below shows each agent's baseline vs. tool-variant performance independently.</p>
       </div>
-      <div class="summary-grid">
-        <div class="comparison-stack">
-          {overall_before}
-          {overall_after}
-        </div>
+      <div>
         <table>
           <thead>
             <tr>
@@ -954,6 +923,7 @@ def render_html_report(
       </div>
     </section>
 
+
     <nav class="nav-strip" aria-label="Family navigation">
       {family_nav if family_nav else '<span class="subtle">No family data found.</span>'}
     </nav>
@@ -972,6 +942,154 @@ def render_html_report(
       Generated {escape(generated_at.isoformat())}. Valid runs only are included in comparisons, matching the benchmark scorecard rules.
     </footer>
   </div>
+</body>
+</html>
+"""
+
+
+def render_layered_html_report(
+    runs: list[RunRecord],
+    *,
+    repo_commit: str = "unknown",
+    generated_at: datetime | None = None,
+    source_results_dir: Path | None = None,
+) -> str:
+    """Render a standalone HTML report for deterministic-first v2 scorecards."""
+    generated_at = generated_at or datetime.now(tz=timezone.utc)
+    if repo_commit == "unknown":
+        commits = {run.repo_commit for run in runs if run.repo_commit}
+        if len(commits) == 1:
+            repo_commit = commits.pop()
+
+    tool_scorecard = generate_tool_efficacy_scorecard(runs, repo_commit=repo_commit)
+    quality_scorecard = generate_quality_retention_scorecard(runs, repo_commit=repo_commit)
+
+    tool_rows = "".join(
+        "<tr>"
+        f"<td>{escape(family.family)}</td>"
+        f"<td>{escape(metrics.variant.value)}</td>"
+        f"<td>{metrics.run_count}</td>"
+        f"<td>{_format_number(metrics.avg_raw_bytes, 1)}</td>"
+        f"<td>{_format_number(metrics.avg_reduced_bytes, 1)}</td>"
+        f"<td>{_format_number(metrics.avg_reduction_ratio, 3)}</td>"
+        f"<td>{_format_status(metrics.deterministic_pass_rate)}</td>"
+        f"<td>{_format_number(metrics.avg_elapsed_seconds, 1)}</td>"
+        "</tr>"
+        for family in tool_scorecard.families
+        for metrics in (family.baseline, family.tool_variant)
+    )
+    quality_rows = "".join(
+        "<tr>"
+        f"<td>{escape(family.family)}</td>"
+        f"<td>{escape(metrics.variant.value)}</td>"
+        f"<td>{metrics.run_count}</td>"
+        f"<td>{_format_number(metrics.avg_raw_quality_score, 2)}</td>"
+        f"<td>{_format_number(metrics.avg_reduced_quality_score, 2)}</td>"
+        f"<td>{_format_number(metrics.avg_quality_delta, 2)}</td>"
+        f"<td>{metrics.llm_call_count_small}</td>"
+        f"<td>{metrics.llm_call_count_expensive}</td>"
+        "</tr>"
+        for family in quality_scorecard.families
+        for metrics in (family.baseline, family.tool_variant)
+    )
+    source_note = (
+        f"<p><strong>Source:</strong> {escape(str(source_results_dir))}</p>"
+        if source_results_dir is not None
+        else ""
+    )
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>agentic-token-bench layered report</title>
+  <style>
+    body {{
+      font-family: "Segoe UI", system-ui, sans-serif;
+      margin: 0;
+      background: #f8fafc;
+      color: #0f172a;
+    }}
+    main {{
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }}
+    section {{
+      background: white;
+      border: 1px solid #dbe4f0;
+      border-radius: 18px;
+      padding: 20px;
+      margin-top: 20px;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }}
+    th, td {{
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid #e2e8f0;
+    }}
+    th {{
+      background: #eff6ff;
+      font-size: 0.9rem;
+    }}
+    h1, h2 {{
+      margin: 0 0 8px;
+    }}
+    p {{
+      color: #475569;
+      margin: 4px 0;
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Deterministic-First Layered Report</h1>
+    <p>Generated {escape(generated_at.astimezone(timezone.utc).isoformat())}</p>
+    <p><strong>Repo commit:</strong> {escape(repo_commit)}</p>
+    {source_note}
+    <section>
+      <h2>Tool Efficacy</h2>
+      <p>Reduction and deterministic validity for tool-only runs.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Family</th>
+            <th>Variant</th>
+            <th>Runs</th>
+            <th>Avg raw bytes</th>
+            <th>Avg reduced bytes</th>
+            <th>Avg reduction ratio</th>
+            <th>Deterministic pass</th>
+            <th>Avg elapsed (s)</th>
+          </tr>
+        </thead>
+        <tbody>{tool_rows}</tbody>
+      </table>
+    </section>
+    <section>
+      <h2>Quality Retention</h2>
+      <p>Downstream answer quality after deterministic reduction.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Family</th>
+            <th>Variant</th>
+            <th>Runs</th>
+            <th>Avg raw quality</th>
+            <th>Avg reduced quality</th>
+            <th>Avg quality delta</th>
+            <th>Small LLM calls</th>
+            <th>Expensive LLM calls</th>
+          </tr>
+        </thead>
+        <tbody>{quality_rows}</tbody>
+      </table>
+    </section>
+  </main>
 </body>
 </html>
 """

@@ -1,10 +1,10 @@
-"""Generate official scorecards from run records in tests/fixtures/official_runs/.
+"""Generate official scorecards from real run records in benchmarks/results/.
 
 Produces:
-- tests/fixtures/official_runs/scorecard.md
-- tests/fixtures/official_runs/scorecard.json
-- tests/fixtures/official_runs/<family>_scorecard.md  (per-family)
-- tests/fixtures/official_runs/<family>_scorecard.json (per-family)
+- benchmarks/results/scorecard.md
+- benchmarks/results/scorecard.json
+- benchmarks/results/<family>_scorecard.md  (per-family)
+- benchmarks/results/<family>_scorecard.json (per-family)
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from benchmarks.harness.reporting import (  # noqa: E402
     render_scorecard_markdown,
 )
 
-RESULTS_DIR = Path("tests/fixtures/official_runs")
+RESULTS_DIR = Path("benchmarks/results")
 AGENT_ID = "claude"
 REPO_COMMIT = "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
 

@@ -1,18 +1,20 @@
 # Benchmark Methodology
 
-This document describes how the `agentic-token-bench` v1 benchmark is designed,
-executed, and interpreted. It is intended for third parties who want to understand
-the method before relying on published results or reproducing the suite.
+This document describes the v2 benchmark methodology for `agentic-token-bench`.
+v2 is the deterministic-first contract for new results: tools produce or reduce
+artifacts first, deterministic checks validate those artifacts second, and an
+LLM is used only when a downstream quality judgment is still needed.
 
-The authoritative implementation contract is
-`docs/plans/2026-03-31-v1-build-plan-design.md`. When this document and the
-implementation plan conflict, the implementation plan takes precedence.
+The original v1 end-to-end agent workflow remains available as a legacy/
+appendix track for historical reproduction and compatibility. When this document
+and the legacy v1 implementation plan conflict, use this document for v2
+interpretation and the implementation plan for legacy-agent reproduction.
 
 ---
 
 ## 1. Benchmark Design
 
-V1 is intentionally narrow.
+V2 is intentionally narrow and layered.
 
 **Single repository.** All official tasks run against Apache Cassandra at one
 pinned commit. Using one repository removes repo-level confounds from
@@ -21,25 +23,33 @@ release; results are not mixed across commits.
 
 **Single-tool task families.** The unit of comparison is a tool family: one
 tool under test, two tasks on Cassandra, one baseline variant per task, and one
-enforced-tool variant per task. Official scorecards do not mix tools within a
-comparison. Mixed-tool workflows appear in a clearly labeled appendix (Track B)
-and are not the basis for tool-specific claims.
+enforced-tool variant per task. In v2, the official evidence is split into two
+layers: deterministic tool efficacy and downstream quality retention. Official
+scorecards do not mix tools within a comparison. Mixed-tool workflows appear in
+a clearly labeled appendix (legacy Track B) and are not the basis for tool-
+specific claims.
 
 **Controlled comparison.** Each family produces one direct comparison: the same
-task, the same agent, the same Cassandra commit, with and without the tool under
-test. The baseline variant removes the tool; the tool variant enforces it. All
-other conditions are held constant.
+task, the same agent, the same Cassandra commit, with and without the tool
+under test. The baseline variant removes the tool; the tool variant enforces it.
+All other conditions are held constant. For v2, the comparison is read as
+deterministic artifact quality first, then downstream answer quality if an LLM
+judge is required.
 
-V1 has six official tool families: `ripgrep`, `qmd`, `rtk`, `fastmod`,
-`ast-grep`, and `comby`. Each family has two tasks, yielding twelve official
-tasks. With baseline and tool variants, and three repetitions per run for
-stability, a single qualified agent requires 72 official runs.
+V2 keeps the same six official tool families: `ripgrep`, `qmd`, `rtk`,
+`fastmod`, `ast-grep`, and `comby`. Each family has two tasks, yielding twelve
+official tasks. The legacy v1 end-to-end matrix remains reproducible for
+compatibility; v2 adds the deterministic-first interpretation on top of those
+families.
 
 ---
 
-## 2. Tool Enforcement Model
+## 2. Tool Enforcement and Validation Model
 
 Tool availability is enforced by the harness, not by instructions to the agent.
+That model still matters for legacy-agent runs and for compatibility checks. In
+v2, direct artifact validation is the primary measurement path whenever the
+tool output can be checked without an agent conversation.
 
 **PATH control.** For each step in a task, the harness constructs a temporary
 tool directory and places only the allowed tool wrappers on `PATH`. System
@@ -65,14 +75,14 @@ review does not override them.
 
 ## 3. Token Accounting
 
-**Reported values only.** The official token metric is the count reported by
-the agent CLI itself. Estimated or inferred token counts are not permitted in
-official results. Any run that does not produce stable, extractable reported
-token counts is classified as invalid and excluded from official scorecards.
+**Reported values only for legacy-agent runs.** When an agent CLI is involved,
+the official token metric is the count reported by the agent CLI itself.
+Estimated or inferred token counts are not permitted in official results. Any
+run that does not produce stable, extractable reported token counts is
+classified as invalid and excluded from official scorecards.
 
-**No mixing.** Reported and estimated counts are never combined in official
-tables. If one run in a family produces estimated rather than reported counts,
-that run is invalid for official comparison purposes.
+For v2 tool-only and quality-eval phases, bytes reduced, preservation checks,
+and downstream quality scores matter more than raw agent-token totals.
 
 **Evidence required.** Every run artifact directory contains a
 `token_evidence.txt` file. This file holds the raw snippet from agent output
@@ -148,10 +158,15 @@ written to the run record.
 
 ## 6. Task Design
 
-**Phased steps.** Each official task is divided into named steps with canonical
+V2 tasks are phase-based and deterministic-first. A task may define a tool
+phase, a validation phase, and an optional downstream quality-eval phase. The
+older step-based manifest shape below is retained for legacy-agent
+compatibility and historical runs.
+
+**Phased steps.** Legacy v1 tasks are divided into named steps with canonical
 IDs: `discover`, `retrieve`, `analyze`, `edit`, `validate`, `summarize`. Each
-step has its own tool rules, completion contract, and artifact requirements. The
-harness enforces each step's rules independently.
+step has its own tool rules, completion contract, and artifact requirements.
+The harness enforces each step's rules independently.
 
 **Completion contracts.** Each step specifies what the agent must produce to
 satisfy that step. Contracts are either `structured_answer` (specific fields
@@ -228,15 +243,17 @@ token delta.
 
 ## 9. Limitations
 
-V1 is a controlled measurement product, not a general platform. The following
-limitations apply to all v1 claims.
+V2 is a controlled measurement product, not a general platform. The following
+limitations apply to all v2 claims. The legacy v1 track remains available for
+compatibility and historical comparison, but it is not the primary claim
+surface.
 
 **Not universal.** Results describe tool effects on Apache Cassandra under the
-specific task shapes defined in v1. The benchmark does not claim that token
+specific task shapes defined in v2. The benchmark does not claim that token
 savings observed here generalize to other repositories, other languages, other
 task types, or other agent configurations.
 
-**One repository.** All official v1 comparisons are on Cassandra at one pinned
+**One repository.** All official v2 comparisons are on Cassandra at one pinned
 commit. Repository-level effects are not separated from tool effects. A tool
 that performs well on Cassandra may not perform the same way on a different
 codebase.
@@ -247,9 +264,10 @@ under the same contract and run the same official suite. Cross-agent results are
 not comparable until both agents have qualified qualification records produced
 by the same harness version.
 
-**CLI invocation only.** V1 uses CLI agent invocation. API-based execution is
-not in scope. Agents that expose different behavior through a CLI than through
-their API are measured only through their CLI.
+**CLI invocation only for legacy-agent runs.** The legacy track uses CLI agent
+invocation. API-based execution is not in scope for that track. Agents that
+expose different behavior through a CLI than through their API are measured
+only through their CLI.
 
 **Reported tokens, not ground-truth tokens.** The official metric is what the
 agent CLI reports. If an agent under-reports or over-reports tokens relative to
@@ -260,3 +278,9 @@ agent-side reporting differences.
 **Track A vs. Track B.** Mixed-tool appendix workflows (Track B) are not the
 basis for tool-specific claims. Token savings attributed to a specific tool in
 official results come only from single-tool family comparisons in Track A.
+
+## 10. Legacy v1 Appendix
+
+The original end-to-end agent workflow is retained as a legacy/appendix track.
+Those runs remain reproducible and comparable with earlier releases, but they
+should be read as compatibility evidence, not as the primary v2 methodology.

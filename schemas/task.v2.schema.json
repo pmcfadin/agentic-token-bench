@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Task Manifest V2",
+  "description": "Schema for deterministic-first benchmark task manifests.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "version",
+    "task_id",
+    "title",
+    "family",
+    "repo",
+    "pinned_commit",
+    "objective",
+    "task_description",
+    "success_criteria",
+    "input_artifacts",
+    "tool_invocation",
+    "deterministic_checks"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 2 },
+    "version": { "type": "string", "const": "v2" },
+    "deterministic_first": { "type": "boolean" },
+    "benchmark_mode": { "type": "string" },
+    "task_id": { "type": "string" },
+    "title": { "type": "string" },
+    "family": { "type": "string" },
+    "repo": { "type": "string" },
+    "pinned_commit": { "type": "string" },
+    "objective": { "type": "string" },
+    "task_description": { "type": "string" },
+    "success_criteria": { "type": "array", "items": { "type": "string" } },
+    "human_review_triggers": { "type": "array", "items": { "type": "string" } },
+    "fixture_files": { "type": "array", "items": { "type": "string" } },
+    "validation_commands": { "type": "array", "items": { "type": "string" } },
+    "output_contract": { "type": "object" },
+    "input_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "source", "target_name"],
+        "properties": {
+          "name": { "type": "string" },
+          "source": { "type": "string" },
+          "target_name": { "type": "string" },
+          "primary": { "type": "boolean" }
+        }
+      }
+    },
+    "tool_invocation": {
+      "type": "object",
+      "required": ["tool_id", "args", "output_artifact"],
+      "properties": {
+        "tool_id": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "baseline_args": { "type": "array", "items": { "type": "string" } },
+        "output_artifact": { "type": "string" },
+        "output_mode": { "type": "string" },
+        "baseline_strategy": { "type": "string" },
+        "timeout_seconds": { "type": "number" }
+      }
+    },
+    "deterministic_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "command"],
+        "properties": {
+          "name": { "type": "string" },
+          "command": { "type": "string" }
+        }
+      }
+    },
+    "quality_evaluation": {
+      "type": ["object", "null"],
+      "properties": {
+        "question": { "type": "string" },
+        "raw_validation_commands": { "type": "array", "items": { "type": "string" } },
+        "reduced_validation_commands": { "type": "array", "items": { "type": "string" } },
+        "small_model_allowed": { "type": "boolean" },
+        "expensive_model_allowed": { "type": "boolean" },
+        "escalation_note": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

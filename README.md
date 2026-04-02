@@ -2,62 +2,89 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**Measure, route, and package the tools that make agentic coding cheaper and sharper.**
+**Do token-saving tools actually work in agentic coding workflows?**
 
-`agentic-token-bench` is an open benchmark and plugin framework for measuring how external tools reduce token usage in agentic programming workflows without reducing correctness.
+`agentic-token-bench` is an open benchmark that measures whether external tools reduce token usage when AI coding agents work on real codebases — without reducing correctness.
 
-## Status
+## Key Findings (v1 — ripgrep family)
 
-Under active development. See [docs/plans/](docs/plans/) for the current implementation plan.
+We ran three AI agents (Claude, Codex, Gemini CLI) on identical code-discovery tasks against Apache Cassandra, with and without ripgrep.
 
-## What This Project Does
+| Agent | Token Reduction | Time Reduction | Runs |
+|-------|----------------|----------------|------|
+| **Codex** | **-76.0%** | -66% | 4 |
+| **Claude** | **-12.7%** | -40% | 12 |
+| **Gemini CLI** | partial data | -46% | 4 |
 
-Benchmarks and packages tools that reduce token waste across the full agent loop:
+Codex showed massive savings; Claude showed modest but consistent improvement. Full results with per-task breakdowns in [docs/findings.md](docs/findings.md).
 
-- **Retrieval minimization** (qmd)
-- **CLI output compression** (rtk)
-- **Mechanical transformations** (fastmod, ast-grep, comby)
-- **Repo discovery** (ripgrep)
+## How It Works
 
-V1 focuses on Apache Cassandra as the benchmark repository, with controlled single-tool task families and enforced tool usage.
+1. **Task manifests** define coding tasks on a pinned Cassandra checkout
+2. **PATH enforcement** controls which tools the agent can use (baseline removes the tool; variant enforces it)
+3. **Agent adapters** run Claude, Codex, or Gemini CLI and extract reported token counts
+4. **Automated validation** checks the agent's answer against expected results
+5. **Per-agent scorecards** compare baseline vs. tool-variant performance
+
+No Docker required — PATH-based isolation is sufficient and reproducible.
 
 ## Quick Start
 
-```bash
-uv sync
-uv run atb --help
-```
+### View results
 
-## Reproduction
+Browse the [HTML report](benchmarks/results/report.html) or read [docs/findings.md](docs/findings.md).
 
-Full reproduction instructions are in [docs/reproduction.md](docs/reproduction.md).
-
-**Short path (no agent CLI required):**
+### Regenerate from existing data
 
 ```bash
 git clone https://github.com/pmcfadin/agentic-token-bench.git
 cd agentic-token-bench
 uv sync
-uv run pytest
-uv run python scripts/generate_fixture_runs.py
-uv run python scripts/generate_scorecards.py
-uv run atb generate-benchmark-overview benchmarks/results
+uv run atb generate-scorecard benchmarks/results
 uv run atb generate-html-report benchmarks/results
-cat benchmarks/results/official/scorecard.md
 ```
 
-This exercises the full pipeline using fixture data and completes in under 10 minutes.
-
-**To run against a live agent**, you also need the agent CLI installed and at least one agent qualified:
+### Run your own benchmarks
 
 ```bash
+uv sync
+
+# Qualify an agent
 uv run atb qualify-agent claude
-uv run atb run-task benchmarks/tasks/cassandra/official/<task>.yaml \
-  --agent claude --variant tool_variant
-uv run atb generate-scorecard benchmarks/results --agent-id claude
+
+# Run the ripgrep family (baseline + tool_variant for each task)
+uv run atb run-family ripgrep --agent claude
+
+# Generate per-agent scorecards
+uv run atb generate-scorecard benchmarks/results
 ```
 
-See [docs/reproduction.md](docs/reproduction.md) for prerequisites, tool installation, agent qualification, and result interpretation.
+Supported agents: `claude`, `codex`, `gemini-cli`. See [docs/findings.md](docs/findings.md) for full reproduction steps.
+
+## Project Structure
+
+| Directory | Purpose |
+|-----------|---------|
+| `benchmarks/harness/` | Core harness: runner, CLI, reporting |
+| `benchmarks/tasks/` | Task manifests (YAML) |
+| `benchmarks/results/` | Run artifacts and scorecards |
+| `agents/` | Agent adapters (Claude, Codex, Gemini CLI) |
+| `tools/` | Tool wrappers (ripgrep, rtk, fastmod, qmd, ast-grep, comby) |
+| `docs/` | Methodology, findings, and design docs |
+
+## v1 Scope
+
+- **Repository**: Apache Cassandra (Java), pinned commit
+- **Tool family tested**: ripgrep (code discovery)
+- **Agents tested**: Claude, Codex, Gemini CLI
+- **Pending families**: qmd, rtk, fastmod, ast-grep, comby (task definitions ready, live runs planned for v2)
+
+## Tests
+
+```bash
+uv run pytest          # 767 tests
+uv run ruff check .    # Lint
+```
 
 ## License
 

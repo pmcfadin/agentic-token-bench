@@ -6,9 +6,10 @@ rendering.  See docs/plans/2026-03-31-v1-build-plan-design.md, section
 
 Public API
 ----------
-render_task_context(task)          -> str
+render_task_context(task)                -> str
 render_step_prompt(task, step, variant) -> str
-render_prompt_pack(task, variant)  -> list[dict]
+render_prompt_pack(task, variant)       -> list[dict]
+render_quality_eval_prompt(...)         -> str
 """
 
 from __future__ import annotations
@@ -242,3 +243,28 @@ def render_prompt_pack(task: TaskManifest, variant: str) -> list[dict]:
         {"step_id": step.step_id, "prompt": render_step_prompt(task, step, variant)}
         for step in task.steps
     ]
+
+
+def render_quality_eval_prompt(
+    *,
+    task_id: str,
+    family: str,
+    question: str,
+    artifact_kind: str,
+    artifact_content: str,
+) -> str:
+    """Render a compact v2 downstream quality-eval prompt."""
+    return _SECTION_SEP.join(
+        [
+            _section(
+                "Evaluation Context",
+                f"Task ID      : {task_id}\nFamily       : {family}\nArtifact kind: {artifact_kind}",
+            ),
+            _section("Question", question.strip()),
+            _section("Artifact", artifact_content.strip()),
+            _section(
+                "Output Format",
+                "Answer the question directly and concisely. Do not mention benchmark mechanics.",
+            ),
+        ]
+    )

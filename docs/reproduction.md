@@ -1,8 +1,15 @@
 # Reproduction Instructions
 
-This document walks through everything needed to clone the repository, install dependencies, and run the benchmark suite end to end.
+This document walks through everything needed to clone the repository, install
+dependencies, and reproduce the current benchmark suite end to end.
 
-The benchmark targets macOS and Linux. Windows is not supported in v1.
+The commands below reproduce the legacy v1 end-to-end workflow. The v2
+methodology is deterministic-first and is documented in
+`docs/methodology.md`; it uses the same families, but it treats the end-to-end
+agent loop as legacy/appendix evidence rather than the primary claim surface.
+
+The benchmark targets macOS and Linux. Windows is not supported in the legacy
+v1 harness.
 
 ---
 
@@ -184,18 +191,22 @@ Use `--variant baseline` to run the baseline (tool removed) variant. Results are
 uv run atb run-family ripgrep --agent claude
 ```
 
-Note: `run-family` and `run-suite` full execution are not yet implemented. Use `run-task` for individual runs or use fixture data (see section 8).
+`run-family` and `run-suite` are implemented. They execute the legacy v1
+end-to-end workflow sequentially and are the right commands for reproducing the
+published fixture or live runs.
 
 ### Official run matrix
 
-The v1 official matrix for one qualified agent is:
+The current official matrix for one qualified agent is the legacy v1 matrix:
 
 - 6 tool families (ripgrep, qmd, rtk, fastmod, ast-grep, comby)
 - 2 tasks per family
 - 2 variants per task (baseline and tool_variant)
 - 3 repetitions for stability
 
-This yields 72 official runs per qualified agent.
+This yields 72 official runs per qualified agent. v2 keeps the same families,
+but it changes how those runs are interpreted: tool execution is measured
+before any downstream LLM-based quality check.
 
 ---
 
@@ -214,6 +225,9 @@ uv run atb generate-scorecard benchmarks/results \
 This writes:
 - `benchmarks/results/scorecard.md` — human-readable summary table
 - `benchmarks/results/scorecard.json` — machine-readable scorecard
+
+These scorecards remain backward-compatible with the legacy v1 reporting shape.
+v2 reporting will split tool efficacy from downstream quality retention.
 
 ### From fixture data
 
@@ -242,7 +256,13 @@ uv run atb generate-benchmark-overview benchmarks/results
 uv run atb generate-html-report benchmarks/results
 ```
 
-The overview page explains the run lifecycle and token accounting. The report page shows before/after comparisons and agent-to-agent token usage on the same tasks.
+The overview page explains the run lifecycle and token accounting. The report
+page shows before/after comparisons and agent-to-agent token usage on the same
+tasks.
+
+For v2, these same report surfaces will gain deterministic validation and
+quality-retention views. Until that lands, treat the current HTML output as the
+legacy-agent view.
 
 ---
 
@@ -347,4 +367,9 @@ tool_invocations.jsonl  # per-tool invocation records
 
 ### Benchmark contract
 
-The full benchmark specification and all locked decisions for v1 are in [docs/plans/2026-03-31-v1-build-plan-design.md](plans/2026-03-31-v1-build-plan-design.md). If any behavior in the harness disagrees with that document, treat it as a bug.
+The full benchmark specification and all locked decisions for the legacy v1
+implementation are in [docs/plans/2026-03-31-v1-build-plan-design.md](plans/2026-03-31-v1-build-plan-design.md).
+The v2 methodology and phased rollout notes are in [docs/methodology.md](methodology.md).
+If the harness disagrees with the legacy plan, treat that as a compatibility
+bug. If the documentation disagrees with the current reporting output, treat it
+as a docs bug.

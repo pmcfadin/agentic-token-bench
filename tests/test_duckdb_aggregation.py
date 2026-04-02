@@ -58,18 +58,23 @@ def _make_run(
     )
 
 
-# Fixture pilot run directory
-PILOT_RUNS_DIR = Path(__file__).parent / "fixtures" / "pilot_runs"
-
-
 @pytest.fixture()
 def pilot_runs() -> list[RunRecord]:
-    """Load all four pilot run fixture JSON files as RunRecord objects."""
-    records: list[RunRecord] = []
-    for json_path in sorted(PILOT_RUNS_DIR.glob("*.json")):
-        data = json.loads(json_path.read_text())
-        records.append(RunRecord.model_validate(data))
-    return records
+    """Four in-memory ripgrep pilot runs (2 tasks × 2 variants)."""
+    return [
+        _make_run(run_id="cassandra-ripgrep-01-baseline", family="ripgrep",
+                  variant=Variant.baseline, reported_total_tokens=15200,
+                  elapsed_seconds=46.0),
+        _make_run(run_id="cassandra-ripgrep-01-tool_variant", family="ripgrep",
+                  variant=Variant.tool_variant, reported_total_tokens=8000,
+                  elapsed_seconds=25.0),
+        _make_run(run_id="cassandra-ripgrep-02-baseline", family="ripgrep",
+                  variant=Variant.baseline, reported_total_tokens=14400,
+                  elapsed_seconds=43.0),
+        _make_run(run_id="cassandra-ripgrep-02-tool_variant", family="ripgrep",
+                  variant=Variant.tool_variant, reported_total_tokens=7800,
+                  elapsed_seconds=24.0),
+    ]
 
 
 @pytest.fixture()
@@ -321,9 +326,9 @@ class TestComputeFamilySummary:
         assert summary["tool_variant"]["pass_rate"] == pytest.approx(1.0)
 
     def test_avg_elapsed_seconds_baseline(self, pilot_conn) -> None:
-        # Pilot fixtures: 46.3 and 43.8 for baseline
+        # Pilot runs: 46.0 and 43.0 for baseline
         summary = compute_family_summary(pilot_conn, "ripgrep")
-        expected = (46.3 + 43.8) / 2
+        expected = (46.0 + 43.0) / 2
         assert summary["baseline"]["avg_elapsed_seconds"] == pytest.approx(expected)
 
     def test_avg_repair_iterations_zero(self, pilot_conn) -> None:

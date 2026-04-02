@@ -1,0 +1,100 @@
+schema_version: 2
+deterministic_first: true
+version: v2
+task_id: cassandra-rtk-02-v2
+title: Extract the exact failing test from noisy Cassandra test output
+family: rtk
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+benchmark_mode: deterministic-first
+objective: >
+  Use rtk to compress a pre-captured Cassandra test log and preserve the
+  exact failing test signature. Do not repair the test.
+task_description: >
+  A pre-captured Cassandra unit test log has been placed in your workspace
+  at `cassandra-test-failure.log`. The log was produced by running
+  `ant test -Dtest.name=CompactionManagerTest` and contains enough noise that
+  the relevant failure signal must be compressed out.
+
+  Your task is to:
+
+  (1) Use rtk to compress `cassandra-test-failure.log`.
+
+  (2) Preserve the failing test method name, the exception type, and the
+      assertion message exactly.
+
+  (3) Return the compressed output and the failure details only. Do not edit
+      any files.
+success_criteria:
+  - compressed output preserves the failing test signature
+  - the failing test method is identified exactly
+  - the exception type and assertion message are identified exactly
+  - no files are modified
+validation_commands:
+  - "python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-02-v2"
+fixture_files:
+  - benchmarks/tasks/cassandra/fixtures/cassandra-test-failure.log
+input_artifacts:
+  - name: test_log
+    source: benchmarks/tasks/cassandra/fixtures/cassandra-test-failure.log
+    target_name: cassandra-test-failure.log
+    primary: true
+tool_invocation:
+  tool_id: rtk
+  args:
+    - read
+    - cassandra-test-failure.log
+  output_artifact: reduced_output.txt
+  baseline_strategy: identity
+  timeout_seconds: 120
+deterministic_checks:
+  - name: preserve_test_failure
+    command: python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-02-v2
+quality_evaluation:
+  question: >
+    Identify the failing test method name, exception type, and exact assertion
+    message from this Cassandra test output.
+  raw_validation_commands:
+    - python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-02-v2
+  reduced_validation_commands:
+    - python scripts/validate_cassandra_v2_rtk.py --task cassandra-rtk-02-v2
+  small_model_allowed: true
+  expensive_model_allowed: false
+  escalation_note: >
+    Escalate only if the compressed output loses the exact test method,
+    exception type, or assertion message.
+output_contract:
+  required_fields:
+    - compressed_output
+    - failing_test
+    - exception_type
+    - exception_message
+steps:
+  - step_id: compress
+    name: compress
+    objective: >
+      Use rtk to compress `cassandra-test-failure.log` while preserving the
+      exact failing test method, exception type, and assertion message.
+    required_tool: rtk
+    allowed_tools: [rtk]
+    blocked_tools: [ripgrep, qmd, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [compressed_output]
+    artifact_requirements: [step_trace]
+  - step_id: report
+    name: report
+    objective: >
+      Produce the final structured answer with the compressed output and the
+      exact test failure details.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [compressed_output, failing_test, exception_type, exception_message]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

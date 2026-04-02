@@ -4,13 +4,24 @@ Everything counts in large amounts.
 
 ## Purpose
 
-`agentic-token-bench` is an open benchmark and plugin framework for measuring how external tools reduce token usage in agentic programming workflows **without reducing correctness**.
+`agentic-token-bench` is an open benchmark and plugin framework for measuring
+how external tools reduce token usage in agentic programming workflows while
+preserving useful downstream quality.
 
 The project exists to answer a practical question:
 
 **Which tools and routing patterns actually reduce context consumption across real coding tasks, and when should an agent use them?**
 
-This project will benchmark and package tools that reduce token waste across the full agent loop, including:
+The benchmark is moving to a deterministic-first v2 methodology:
+
+* tool execution and artifact reduction come first
+* deterministic validation comes second
+* an LLM is only used when a downstream quality judgment still matters
+* legacy end-to-end agent workflows remain available as appendix evidence
+
+This project will benchmark and package tools that reduce token waste across
+deterministic-first workflows and, for legacy compatibility, the full agent
+loop, including:
 
 * **Retrieval minimization** tools (example: QMD)
 * **CLI output compression** tools (example: RTK)
@@ -82,6 +93,12 @@ Every benchmarked technique should ideally produce a reusable plugin, spec, or r
 ### 5. Prefer real workflows over toy examples
 
 Use controlled tasks, but anchor them in real repositories and realistic coding-agent workflows.
+
+### 6. Deterministic checks come first
+
+When an artifact can be checked mechanically, do that before asking a model to
+interpret it. Use the most expensive model only when deterministic checks do
+not answer the question.
 
 ---
 
@@ -407,9 +424,10 @@ Measure whether transformation tools reduce token use on repetitive code changes
 
 ---
 
-## Scenario 4: End-to-End Tasks
+## Scenario 4: Legacy End-to-End Tasks
 
-Measure full-task efficiency when multiple plugins are combined.
+Measure full-task efficiency when multiple plugins are combined in the legacy
+appendix track.
 
 ### Example comparison
 
@@ -424,13 +442,16 @@ Measure full-task efficiency when multiple plugins are combined.
 * validation failures
 * total repair cost
 
+This scenario is useful for compatibility and realism, but it is not the
+primary v2 evidence surface.
+
 ---
 
 ## Repositories for Benchmarking
 
 The benchmark should support multiple real repos, ideally from different ecosystems.
 
-### v1 suggested repos
+### Legacy v1 suggested repos
 
 * Apache Cassandra (Java)
 * a TypeScript/React repo
@@ -622,9 +643,11 @@ agentic-token-bench/
 
 ---
 
-## v1 Scope
+## Legacy v1 Scope
 
-Version 1 should stay tight.
+Version 1 should stay tight. It is the historical end-to-end implementation
+track; v2 is the deterministic-first methodology layered on top of the same
+families and repository anchors.
 
 ### In scope
 
@@ -647,7 +670,7 @@ Version 1 should stay tight.
 
 ---
 
-## v1 Candidate Deliverables
+## Legacy v1 Candidate Deliverables
 
 1. Repo initialized with spec and schemas
 2. Plugin manifest and execution interface

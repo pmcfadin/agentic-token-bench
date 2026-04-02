@@ -30,6 +30,7 @@ def run_validation_command(
     command: str,
     cwd: Path,
     timeout: float = 120.0,
+    env_overrides: dict[str, str] | None = None,
 ) -> ValidationResult:
     """Execute a validation command and return a normalized result.
 
@@ -49,6 +50,8 @@ def run_validation_command(
 
     env = dict(os.environ)
     env["ATB_ARTIFACT_DIR"] = str(cwd)
+    if env_overrides:
+        env.update(env_overrides)
 
     start = time.monotonic()
     try:
@@ -93,6 +96,8 @@ def run_validation_command(
 def run_all_validations(
     commands: list[str],
     cwd: Path,
+    timeout: float = 120.0,
+    env_overrides: dict[str, str] | None = None,
 ) -> list[ValidationResult]:
     """Run each validation command in sequence and return all results.
 
@@ -103,4 +108,12 @@ def run_all_validations(
     Returns:
         List of ValidationResult, one per command, in the same order.
     """
-    return [run_validation_command(command, cwd) for command in commands]
+    return [
+        run_validation_command(
+            command,
+            cwd,
+            timeout=timeout,
+            env_overrides=env_overrides,
+        )
+        for command in commands
+    ]

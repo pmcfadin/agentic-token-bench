@@ -20,6 +20,9 @@ from agents.claude.parser import extract_tokens_from_output, parse_claude_json_o
 _CLAUDE_BINARY = "/Applications/cmux.app/Contents/Resources/bin/claude"
 _CLAUDE_AVAILABLE = shutil.which("claude") is not None or Path(_CLAUDE_BINARY).exists()
 
+# Fast model for integration tests — correctness doesn't matter, only adapter plumbing.
+_FAST_MODEL = "claude-haiku-4-5-20251001"
+
 # ---------------------------------------------------------------------------
 # Fixture data — synthetic JSON strings for unit-testing parser logic
 # ---------------------------------------------------------------------------
@@ -315,38 +318,60 @@ def test_extract_reported_tokens_empty_stdout_returns_zeros() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Integration — real binary (skipped unless available)
+# Integration — shared fixtures (one binary call per fixture, module scope)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def _claude_probe_result() -> QualificationResult:
+    """Single probe() call shared across all probe integration tests."""
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY, model=_FAST_MODEL)
+    return adapter.probe()
+
+
+@pytest.fixture(scope="module")
+def _claude_run_step_result(tmp_path_factory: pytest.TempPathFactory) -> StepResult:
+    """Single run_step() call shared across all run_step integration tests."""
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY, model=_FAST_MODEL)
+    workspace = tmp_path_factory.mktemp("claude_ws")
+    return adapter.run_step(
+        prompt="Reply with the single word 'ok' and nothing else.",
+        step_env=dict(os.environ),
+        workspace=workspace,
+        timeout=60.0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Integration — probe tests (use shared _claude_probe_result)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
-def test_probe_with_real_binary_returns_qualification_result() -> None:
-    """probe() returns a QualificationResult when invoked against the real binary."""
-    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
-    result = adapter.probe()
-    assert isinstance(result, QualificationResult)
+def test_probe_with_real_binary_returns_qualification_result(
+    _claude_probe_result: QualificationResult,
+) -> None:
+    assert isinstance(_claude_probe_result, QualificationResult)
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
-def test_probe_with_real_binary_is_qualified() -> None:
-    """probe() reports qualified=True when the real binary is present and functional."""
-    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
-    result = adapter.probe()
-    assert result.qualified is True
+def test_probe_with_real_binary_is_qualified(
+    _claude_probe_result: QualificationResult,
+) -> None:
+    assert _claude_probe_result.qualified is True
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
-def test_probe_with_real_binary_all_gates_true() -> None:
-    """probe() sets all four capability gates to True on a successful run."""
-    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
-    result = adapter.probe()
-    assert result.reported_token_support is True
-    assert result.forced_tool_support is True
-    assert result.trace_support is True
-    assert result.run_completion_support is True
+def test_probe_with_real_binary_all_gates_true(
+    _claude_probe_result: QualificationResult,
+) -> None:
+    assert _claude_probe_result.reported_token_support is True
+    assert _claude_probe_result.forced_tool_support is True
+    assert _claude_probe_result.trace_support is True
+    assert _claude_probe_result.run_completion_support is True
 
 
 @pytest.mark.integration
@@ -361,119 +386,63 @@ def test_probe_nonexistent_binary_not_qualified() -> None:
     assert "not found" in result.failure_reason.lower()
 
 
-@pytest.mark.integration
-@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
-def test_run_step_returns_step_result(tmp_path: Path) -> None:
-    """run_step() returns a StepResult when the real binary executes successfully."""
-    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
-    sr = adapter.run_step(
-        prompt="Reply with the single word 'ok' and nothing else.",
-        step_env=dict(os.environ),
-        workspace=tmp_path,
-        timeout=60.0,
-    )
-    assert isinstance(sr, StepResult)
+# ---------------------------------------------------------------------------
+# Integration — run_step tests (use shared _claude_run_step_result)
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
-def test_run_step_exits_zero(tmp_path: Path) -> None:
-    """run_step() exits with status 0 for a well-formed prompt."""
-    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
-    sr = adapter.run_step(
-        prompt="Reply with the single word 'ok' and nothing else.",
-        step_env=dict(os.environ),
-        workspace=tmp_path,
-        timeout=60.0,
-    )
-    assert sr.exit_status == 0
+def test_run_step_returns_step_result(_claude_run_step_result: StepResult) -> None:
+    assert isinstance(_claude_run_step_result, StepResult)
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
-def test_run_step_stdout_contains_json(tmp_path: Path) -> None:
-    """run_step() captures JSON output in stdout when --output-format json is used."""
-    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
-    sr = adapter.run_step(
-        prompt="Reply with the single word 'ok' and nothing else.",
-        step_env=dict(os.environ),
-        workspace=tmp_path,
-        timeout=60.0,
-    )
-    parsed = json.loads(sr.stdout)
+def test_run_step_exits_zero(_claude_run_step_result: StepResult) -> None:
+    assert _claude_run_step_result.exit_status == 0
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
+def test_run_step_stdout_contains_json(_claude_run_step_result: StepResult) -> None:
+    parsed = json.loads(_claude_run_step_result.stdout)
     assert parsed.get("type") == "result"
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
-def test_run_step_step_metadata_timed_out_false(tmp_path: Path) -> None:
-    """run_step() sets timed_out=False in step_metadata on a normal completion."""
-    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
-    sr = adapter.run_step(
-        prompt="Reply with the single word 'ok' and nothing else.",
-        step_env=dict(os.environ),
-        workspace=tmp_path,
-        timeout=60.0,
-    )
-    assert sr.step_metadata["timed_out"] is False
+def test_run_step_step_metadata_timed_out_false(_claude_run_step_result: StepResult) -> None:
+    assert _claude_run_step_result.step_metadata["timed_out"] is False
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
-def test_run_step_step_metadata_has_duration_ms(tmp_path: Path) -> None:
-    """run_step() records a non-negative duration_ms in step_metadata."""
-    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
-    sr = adapter.run_step(
-        prompt="Reply with the single word 'ok' and nothing else.",
-        step_env=dict(os.environ),
-        workspace=tmp_path,
-        timeout=60.0,
-    )
-    assert "duration_ms" in sr.step_metadata
-    assert sr.step_metadata["duration_ms"] >= 0
+def test_run_step_step_metadata_has_duration_ms(_claude_run_step_result: StepResult) -> None:
+    assert "duration_ms" in _claude_run_step_result.step_metadata
+    assert _claude_run_step_result.step_metadata["duration_ms"] >= 0
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
-def test_run_step_extract_reported_tokens_nonzero(tmp_path: Path) -> None:
-    """extract_reported_tokens() returns non-zero counts from real run_step() output."""
-    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
-    sr = adapter.run_step(
-        prompt="Reply with the single word 'ok' and nothing else.",
-        step_env=dict(os.environ),
-        workspace=tmp_path,
-        timeout=60.0,
-    )
-    tokens = adapter.extract_reported_tokens(sr)
+def test_run_step_extract_reported_tokens_nonzero(_claude_run_step_result: StepResult) -> None:
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY, model=_FAST_MODEL)
+    tokens = adapter.extract_reported_tokens(_claude_run_step_result)
     assert isinstance(tokens, ReportedTokens)
     assert tokens.total_tokens > 0
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
-def test_run_step_extract_reported_tokens_has_evidence(tmp_path: Path) -> None:
-    """extract_reported_tokens() returns a non-empty evidence_snippet from real output."""
-    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
-    sr = adapter.run_step(
-        prompt="Reply with the single word 'ok' and nothing else.",
-        step_env=dict(os.environ),
-        workspace=tmp_path,
-        timeout=60.0,
-    )
-    tokens = adapter.extract_reported_tokens(sr)
+def test_run_step_extract_reported_tokens_has_evidence(_claude_run_step_result: StepResult) -> None:
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY, model=_FAST_MODEL)
+    tokens = adapter.extract_reported_tokens(_claude_run_step_result)
     assert isinstance(tokens.evidence_snippet, str)
     assert len(tokens.evidence_snippet) > 0
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _CLAUDE_AVAILABLE, reason="claude binary not installed")
-def test_run_step_normalize_final_status_completed(tmp_path: Path) -> None:
-    """normalize_final_status() returns 'completed' for a real successful run_step()."""
-    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY)
-    sr = adapter.run_step(
-        prompt="Reply with the single word 'ok' and nothing else.",
-        step_env=dict(os.environ),
-        workspace=tmp_path,
-        timeout=60.0,
-    )
-    assert adapter.normalize_final_status(sr) == "completed"
+def test_run_step_normalize_final_status_completed(_claude_run_step_result: StepResult) -> None:
+    adapter = ClaudeAdapter(binary_path=_CLAUDE_BINARY, model=_FAST_MODEL)
+    assert adapter.normalize_final_status(_claude_run_step_result) == "completed"

@@ -28,6 +28,48 @@
     "diff_size": { "type": "integer" },
     "artifact_dir": { "type": "string" },
     "started_at": { "type": ["string", "null"], "format": "date-time" },
-    "finished_at": { "type": ["string", "null"], "format": "date-time" }
+    "finished_at": { "type": ["string", "null"], "format": "date-time" },
+    "track": { "type": "string", "enum": ["legacy_agent", "tool_only", "quality_eval"] },
+    "task_version": { "type": ["string", "null"] },
+    "phase_records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "track", "status", "validation_status"],
+        "properties": {
+          "name": { "type": "string" },
+          "track": { "type": "string", "enum": ["legacy_agent", "tool_only", "quality_eval"] },
+          "status": { "type": "string", "enum": ["passed", "failed", "error"] },
+          "started_at": { "type": ["string", "null"], "format": "date-time" },
+          "finished_at": { "type": ["string", "null"], "format": "date-time" },
+          "validation_status": { "type": "string", "enum": ["passed", "failed", "skipped"] },
+          "notes": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "tool_metrics": {
+      "type": ["object", "null"],
+      "properties": {
+        "raw_bytes": { "type": ["integer", "null"] },
+        "reduced_bytes": { "type": ["integer", "null"] },
+        "raw_tokens": { "type": ["integer", "null"] },
+        "reduced_tokens": { "type": ["integer", "null"] },
+        "reduction_ratio": { "type": ["number", "null"] },
+        "deterministic_valid": { "type": ["boolean", "null"] },
+        "deterministic_check_count": { "type": "integer" }
+      }
+    },
+    "quality_metrics": {
+      "type": ["object", "null"],
+      "properties": {
+        "raw_quality_score": { "type": ["number", "null"] },
+        "reduced_quality_score": { "type": ["number", "null"] },
+        "quality_delta": { "type": ["number", "null"] },
+        "llm_call_count_small": { "type": "integer" },
+        "llm_call_count_expensive": { "type": "integer" },
+        "escalation_reason": { "type": ["string", "null"] },
+        "evaluator_model_class": { "type": "string", "enum": ["none", "small", "expensive"] }
+      }
+    }
   }
 }

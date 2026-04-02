@@ -8,21 +8,20 @@ objective: >
   only the minimal source passage that contains the answer. Do not read
   unrelated files.
 task_description: >
-  Apache Cassandra uses a gossip protocol to propagate node state across the
-  cluster. Your task is to answer the following question using only the relevant
-  source or documentation passage in the pinned repository:
+  The Cassandra gossip implementation has been placed in your workspace at
+  `Gossiper.java`. This is the primary gossip implementation from Apache
+  Cassandra, containing the gossip round logic and peer selection code.
 
   Question: How does Cassandra determine which nodes to gossip with during each
   gossip round, and what is the maximum number of nodes contacted per round?
 
-  Use qmd to retrieve the narrowest passage from the source code or inline
-  documentation that directly answers the question. Do not open unrelated files
-  or read entire source files. Produce a structured answer with the answer text,
-  the source file path where you found it, and the line range of the relevant
-  passage.
+  Use qmd to retrieve the narrowest passage from `Gossiper.java` that directly
+  answers the question. Do not read the entire file. Produce a structured
+  answer with the answer text, the source file path, and the line range of
+  the relevant passage.
 success_criteria:
   - Answer correctly describes the gossip peer selection process
-  - Source file path is a real file in the repository under the pinned commit
+  - Source file path references Gossiper.java
   - Line range is plausible for the stated source file
   - No files were modified
   - qmd was used to retrieve the passage
@@ -31,13 +30,15 @@ validation_commands:
 human_review_triggers:
   - "source file path does not contain gossip-related code"
   - "answer cannot be traced to the stated source passage"
+fixture_files:
+  - benchmarks/tasks/cassandra/fixtures/Gossiper.java
 steps:
   - step_id: retrieve
     name: retrieve
     objective: >
-      Use qmd to retrieve the minimal source passage from the Cassandra gossip
-      implementation that answers the question about peer selection per gossip
-      round. Prefer source files over generated docs.
+      Use qmd to retrieve the minimal source passage from `Gossiper.java` in
+      your workspace that answers the question about gossip peer selection per
+      round.
     required_tool: qmd
     allowed_tools: [qmd]
     blocked_tools: [ripgrep, rtk, fastmod, ast-grep, comby]

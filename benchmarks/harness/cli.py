@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import tempfile
 
 import typer
 import yaml
@@ -18,6 +19,10 @@ _ADAPTER_VERSION = "0.1.0"
 _RESULTS_DIR = Path("benchmarks/results")
 
 _SUPPORTED_AGENTS = ("claude", "codex", "gemini-cli")
+
+
+def _progress_printer(message: str) -> None:
+    print(message, flush=True)
 
 
 def _build_adapter(agent: str):  # type: ignore[return]
@@ -47,6 +52,46 @@ def _build_adapter(agent: str):  # type: ignore[return]
     raise typer.BadParameter(
         f"Unknown agent {agent!r}.  Supported agents: {', '.join(_SUPPORTED_AGENTS)}"
     )
+
+
+def _load_yaml_manifest(task_path: Path) -> dict:
+    raw = yaml.safe_load(task_path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"task manifest must deserialize to a mapping: {task_path}")
+    return raw
+
+
+def _prepare_workspace(
+    *,
+    repo_commit: str,
+    run_id: str,
+    workspace: str,
+    skip_checkout: bool,
+) -> Path:
+    from benchmarks.harness.workspace import WorkspaceManager
+
+    ws_mgr = WorkspaceManager(cache_dir=Path(".cache/repos"))
+    if workspace:
+        ws_path = Path(workspace)
+        if not ws_path.exists():
+            raise FileNotFoundError(f"workspace not found: {ws_path}")
+        return ws_path
+
+    if skip_checkout:
+        return Path(tempfile.mkdtemp())
+
+    repo_yaml = Path("benchmarks/repos/cassandra/repo.yaml")
+    if not repo_yaml.exists():
+        raise FileNotFoundError("benchmarks/repos/cassandra/repo.yaml not found")
+    repo_config = ws_mgr.load_repo_config(repo_yaml)
+    typer.echo(f"workspace: cloning {repo_config['name']} at {repo_commit[:12]}...")
+    ws_path = ws_mgr.prepare(
+        repo_url=repo_config["url"],
+        commit=repo_commit,
+        run_id=run_id,
+    )
+    typer.echo(f"workspace: ready at {ws_path}")
+    return ws_path
 
 
 @app.command()
@@ -104,7 +149,6 @@ def run_task(
     """
     from benchmarks.harness.models import TaskManifest
     from benchmarks.harness.runner import BenchmarkRunner
-    from benchmarks.harness.workspace import WorkspaceManager
 
     task_path = Path(task_file)
     if not task_path.exists():
@@ -112,7 +156,7 @@ def run_task(
         raise typer.Exit(1)
 
     try:
-        raw = yaml.safe_load(task_path.read_text(encoding="utf-8"))
+        raw = _load_yaml_manifest(task_path)
         manifest = TaskManifest.model_validate(raw)
     except Exception as exc:  # noqa: BLE001
         typer.echo(f"run-task: failed to load task manifest: {exc}", err=True)
@@ -124,31 +168,16 @@ def run_task(
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
 
-    # Prepare workspace
-    ws_mgr = WorkspaceManager(cache_dir=Path(".cache/repos"))
-    ws_path: Path
-    if workspace:
-        ws_path = Path(workspace)
-        if not ws_path.exists():
-            typer.echo(f"run-task: workspace not found: {ws_path}", err=True)
-            raise typer.Exit(1)
-    elif skip_checkout:
-        import tempfile
-        ws_path = Path(tempfile.mkdtemp())
-    else:
-        # Load repo config and clone
-        repo_yaml = Path("benchmarks/repos/cassandra/repo.yaml")
-        if not repo_yaml.exists():
-            typer.echo("run-task: benchmarks/repos/cassandra/repo.yaml not found", err=True)
-            raise typer.Exit(1)
-        repo_config = ws_mgr.load_repo_config(repo_yaml)
-        typer.echo(f"run-task: cloning {repo_config['name']} at {manifest.pinned_commit[:12]}...")
-        ws_path = ws_mgr.prepare(
-            repo_url=repo_config["url"],
-            commit=manifest.pinned_commit,
+    try:
+        ws_path = _prepare_workspace(
+            repo_commit=manifest.pinned_commit,
             run_id=f"{manifest.task_id}-{variant}",
+            workspace=workspace,
+            skip_checkout=skip_checkout,
         )
-        typer.echo(f"run-task: workspace ready at {ws_path}")
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"run-task: failed to prepare workspace: {exc}", err=True)
+        raise typer.Exit(1) from exc
 
     runner = BenchmarkRunner(results_dir=Path(results_dir))
 
@@ -158,6 +187,7 @@ def run_task(
             adapter=adapter,
             variant=variant,
             workspace=ws_path,
+            progress=_progress_printer,
         )
     except Exception as exc:  # noqa: BLE001
         typer.echo(f"run-task: runner raised an exception: {exc}", err=True)
@@ -183,8 +213,6 @@ def run_family(
     results_dir: str = typer.Option(default="benchmarks/results", help="Results directory"),
 ) -> None:
     """Run all tasks for a tool family (both baseline and tool_variant)."""
-    import tempfile
-
     from benchmarks.harness.models import TaskManifest
     from benchmarks.harness.runner import BenchmarkRunner
 
@@ -217,7 +245,13 @@ def run_family(
         for variant in ("baseline", "tool_variant"):
             ws = Path(tempfile.mkdtemp())
             try:
-                record = runner.run_task(task=manifest, adapter=adapter, variant=variant, workspace=ws)
+                record = runner.run_task(
+                    task=manifest,
+                    adapter=adapter,
+                    variant=variant,
+                    workspace=ws,
+                    progress=_progress_printer,
+                )
                 typer.echo(
                     f"  {record.run_id}  {variant}  tokens={record.reported_total_tokens}"
                     f"  status={record.status.value}"
@@ -281,8 +315,6 @@ def run_suite(
     if list_only:
         return
 
-    import tempfile
-
     from benchmarks.harness.runner import BenchmarkRunner
 
     try:
@@ -299,7 +331,13 @@ def run_suite(
         for variant in ("baseline", "tool_variant"):
             ws = Path(tempfile.mkdtemp())
             try:
-                record = runner.run_task(task=manifest, adapter=adapter, variant=variant, workspace=ws)
+                record = runner.run_task(
+                    task=manifest,
+                    adapter=adapter,
+                    variant=variant,
+                    workspace=ws,
+                    progress=_progress_printer,
+                )
                 completed += 1
                 typer.echo(
                     f"  [{completed}/{total}] {record.run_id}"
@@ -313,16 +351,129 @@ def run_suite(
     typer.echo(f"run-suite: completed {completed}/{total} runs")
 
 
+@app.command("run-tool-task")
+def run_tool_task(
+    task_file: str = typer.Argument(help="Path to the v2 task YAML manifest"),
+    variant: str = typer.Option(default="tool_variant", help="baseline or tool_variant"),
+    workspace: str = typer.Option(default="", help="Path to pre-existing workspace"),
+    results_dir: str = typer.Option(default="benchmarks/results", help="Results directory"),
+    skip_checkout: bool = typer.Option(default=False, help="Skip Cassandra checkout when possible"),
+) -> None:
+    """Run a deterministic-first v2 task in tool-only mode."""
+    from benchmarks.harness.layered_runner import LayeredBenchmarkRunner
+    from benchmarks.harness.models import V2TaskManifest
+
+    task_path = Path(task_file)
+    if not task_path.exists():
+        typer.echo(f"run-tool-task: task file not found: {task_path}", err=True)
+        raise typer.Exit(1)
+
+    try:
+        manifest = V2TaskManifest.model_validate(_load_yaml_manifest(task_path))
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"run-tool-task: failed to load v2 manifest: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    try:
+        ws_path = _prepare_workspace(
+            repo_commit=manifest.pinned_commit,
+            run_id=f"{manifest.task_id}-{variant}-tool-only",
+            workspace=workspace,
+            skip_checkout=skip_checkout,
+        )
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"run-tool-task: failed to prepare workspace: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    runner = LayeredBenchmarkRunner(results_dir=Path(results_dir))
+    try:
+        record = runner.run_tool_task(
+            task=manifest,
+            variant=variant,
+            workspace=ws_path,
+            progress=_progress_printer,
+        )
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"run-tool-task: runner raised an exception: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(
+        f"run-tool-task: {record.run_id}"
+        f" status={record.status.value}"
+        f" validity={record.validity.value}"
+        f" raw_bytes={record.tool_metrics.raw_bytes if record.tool_metrics else 'N/A'}"
+        f" reduced_bytes={record.tool_metrics.reduced_bytes if record.tool_metrics else 'N/A'}"
+    )
+
+
+@app.command("run-quality-eval")
+def run_quality_eval(
+    task_file: str = typer.Argument(help="Path to the v2 task YAML manifest"),
+    source_run_dir: str = typer.Argument(help="Path to a prior tool-only run artifact directory"),
+    agent: str = typer.Option(help="Agent ID used as downstream evaluator"),
+    variant: str = typer.Option(default="tool_variant", help="baseline or tool_variant"),
+    results_dir: str = typer.Option(default="benchmarks/results", help="Results directory"),
+    evaluator_model_class: str = typer.Option(default="small", help="none, small, or expensive"),
+) -> None:
+    """Run the downstream quality-evaluation phase for a v2 task."""
+    from benchmarks.harness.layered_runner import LayeredBenchmarkRunner
+    from benchmarks.harness.models import EvaluatorModelClass, V2TaskManifest
+
+    task_path = Path(task_file)
+    if not task_path.exists():
+        typer.echo(f"run-quality-eval: task file not found: {task_path}", err=True)
+        raise typer.Exit(1)
+
+    try:
+        manifest = V2TaskManifest.model_validate(_load_yaml_manifest(task_path))
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"run-quality-eval: failed to load v2 manifest: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    try:
+        adapter = _build_adapter(agent)
+        model_class = EvaluatorModelClass(evaluator_model_class)
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"run-quality-eval: invalid evaluator configuration: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    runner = LayeredBenchmarkRunner(results_dir=Path(results_dir))
+    try:
+        record = runner.run_quality_eval(
+            task=manifest,
+            variant=variant,
+            source_run_dir=Path(source_run_dir),
+            adapter=adapter,
+            evaluator_model_class=model_class,
+            progress=_progress_printer,
+        )
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"run-quality-eval: runner raised an exception: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(
+        f"run-quality-eval: {record.run_id}"
+        f" status={record.status.value}"
+        f" quality_delta={record.quality_metrics.quality_delta if record.quality_metrics else 'N/A'}"
+        f" small_calls={record.quality_metrics.llm_call_count_small if record.quality_metrics else 'N/A'}"
+        f" expensive_calls={record.quality_metrics.llm_call_count_expensive if record.quality_metrics else 'N/A'}"
+    )
+
+
 @app.command()
 def generate_scorecard(
     results_dir: str = typer.Argument(default="benchmarks/results", help="Results directory"),
-    agent_id: str = typer.Option(default="unknown", help="Agent ID for the scorecard"),
     repo_commit: str = typer.Option(default="unknown", help="Repo commit for the scorecard"),
     output_dir: str = typer.Option(default="", help="Output directory (defaults to results_dir)"),
 ) -> None:
-    """Generate scorecards from run.json files found in the results directory tree."""
+    """Generate per-agent scorecards from run.json files found in the results directory tree.
+
+    Auto-detects agents from the run data and writes one scorecard per agent
+    (e.g. scorecard-claude.json, scorecard-codex.json) plus a combined scorecard.
+    """
     from benchmarks.harness.models import RunRecord
     from benchmarks.harness.reporting import (
+        generate_per_agent_scorecards,
         generate_suite_scorecard,
         render_scorecard_json,
         render_scorecard_markdown,
@@ -350,20 +501,98 @@ def generate_scorecard(
         typer.echo("generate-scorecard: no valid run records loaded", err=True)
         raise typer.Exit(1)
 
-    scorecard = generate_suite_scorecard(runs, agent_id=agent_id, repo_commit=repo_commit)
+    out_path = Path(output_dir) if output_dir else results_path
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    # Auto-detect repo_commit from run data if not provided
+    if repo_commit == "unknown":
+        commits = {r.repo_commit for r in runs if r.repo_commit}
+        if len(commits) == 1:
+            repo_commit = commits.pop()
+
+    # Generate per-agent scorecards
+    per_agent = generate_per_agent_scorecards(runs, repo_commit=repo_commit)
+    for agent_name, scorecard in per_agent.items():
+        md_path = out_path / f"scorecard-{agent_name}.md"
+        json_path = out_path / f"scorecard-{agent_name}.json"
+        md_path.write_text(render_scorecard_markdown(scorecard), encoding="utf-8")
+        json_path.write_text(render_scorecard_json(scorecard), encoding="utf-8")
+        typer.echo(f"generate-scorecard: wrote {json_path} ({scorecard.families[0].baseline.run_count + scorecard.families[0].tool_variant.run_count if scorecard.families else 0} runs)")
+
+    # Generate combined scorecard (clearly labeled)
+    combined = generate_suite_scorecard(runs, agent_id="all-agents-combined", repo_commit=repo_commit)
+    combined_md = out_path / "scorecard.md"
+    combined_json = out_path / "scorecard.json"
+    combined_md.write_text(render_scorecard_markdown(combined), encoding="utf-8")
+    combined_json.write_text(render_scorecard_json(combined), encoding="utf-8")
+
+    agents_found = sorted(per_agent.keys())
+    typer.echo(f"generate-scorecard: loaded {len(runs)} runs, agents: {', '.join(agents_found)}")
+    typer.echo(f"generate-scorecard: wrote per-agent scorecards + combined to {out_path}")
+
+
+@app.command("generate-layered-scorecards")
+def generate_layered_scorecards(
+    results_dir: str = typer.Argument(default="benchmarks/results", help="Results directory"),
+    repo_commit: str = typer.Option(default="unknown", help="Repo commit for the scorecards"),
+    output_dir: str = typer.Option(default="", help="Output directory (defaults to results_dir)"),
+) -> None:
+    """Generate deterministic-first v2 scorecards for tool efficacy and quality retention."""
+    from benchmarks.harness.models import RunRecord
+    from benchmarks.harness.reporting import (
+        generate_quality_retention_scorecard,
+        generate_tool_efficacy_scorecard,
+        render_quality_retention_json,
+        render_quality_retention_markdown,
+        render_tool_efficacy_json,
+        render_tool_efficacy_markdown,
+    )
+
+    results_path = Path(results_dir)
+    if not results_path.exists():
+        typer.echo(f"generate-layered-scorecards: results directory not found: {results_path}", err=True)
+        raise typer.Exit(1)
+
+    runs: list[RunRecord] = []
+    for run_file in sorted(results_path.rglob("run.json")):
+        try:
+            data = json.loads(run_file.read_text(encoding="utf-8"))
+            runs.append(RunRecord.model_validate(data))
+        except Exception as exc:  # noqa: BLE001
+            typer.echo(f"generate-layered-scorecards: skipping {run_file} ({exc})", err=True)
+
+    if not runs:
+        typer.echo("generate-layered-scorecards: no valid run records loaded", err=True)
+        raise typer.Exit(1)
+
+    if repo_commit == "unknown":
+        commits = {r.repo_commit for r in runs if r.repo_commit}
+        if len(commits) == 1:
+            repo_commit = commits.pop()
 
     out_path = Path(output_dir) if output_dir else results_path
     out_path.mkdir(parents=True, exist_ok=True)
 
-    md_path = out_path / "scorecard.md"
-    json_path = out_path / "scorecard.json"
+    tool_scorecard = generate_tool_efficacy_scorecard(runs, repo_commit=repo_commit)
+    quality_scorecard = generate_quality_retention_scorecard(runs, repo_commit=repo_commit)
 
-    md_path.write_text(render_scorecard_markdown(scorecard), encoding="utf-8")
-    json_path.write_text(render_scorecard_json(scorecard), encoding="utf-8")
-
-    typer.echo(f"generate-scorecard: loaded {len(runs)} runs, {len(scorecard.families)} families")
-    typer.echo(f"generate-scorecard: wrote {md_path}")
-    typer.echo(f"generate-scorecard: wrote {json_path}")
+    (out_path / "tool-efficacy-scorecard.json").write_text(
+        render_tool_efficacy_json(tool_scorecard),
+        encoding="utf-8",
+    )
+    (out_path / "tool-efficacy-scorecard.md").write_text(
+        render_tool_efficacy_markdown(tool_scorecard),
+        encoding="utf-8",
+    )
+    (out_path / "quality-retention-scorecard.json").write_text(
+        render_quality_retention_json(quality_scorecard),
+        encoding="utf-8",
+    )
+    (out_path / "quality-retention-scorecard.md").write_text(
+        render_quality_retention_markdown(quality_scorecard),
+        encoding="utf-8",
+    )
+    typer.echo(f"generate-layered-scorecards: wrote layered scorecards to {out_path}")
 
 
 @app.command("generate-html-report")
@@ -405,6 +634,39 @@ def generate_html_report(
     typer.echo(f"generate-html-report: wrote {out_path}")
 
 
+@app.command("generate-layered-html-report")
+def generate_layered_html_report(
+    results_dir: str = typer.Argument(default="benchmarks/results", help="Results directory"),
+    output_path: str = typer.Option(
+        default="",
+        help="Output HTML file (defaults to <results_dir>/layered-report.html)",
+    ),
+    repo_commit: str = typer.Option(default="unknown", help="Repo commit for the report"),
+) -> None:
+    """Generate a standalone HTML report for deterministic-first layered runs."""
+    from benchmarks.harness.html_report import load_run_records, render_layered_html_report
+
+    results_path = Path(results_dir)
+    if not results_path.exists():
+        typer.echo(f"generate-layered-html-report: results directory not found: {results_path}", err=True)
+        raise typer.Exit(1)
+
+    runs = load_run_records(results_path)
+    if not runs:
+        typer.echo(f"generate-layered-html-report: no run.json files found under {results_path}", err=True)
+        raise typer.Exit(1)
+
+    html = render_layered_html_report(
+        runs,
+        repo_commit=repo_commit,
+        source_results_dir=results_path,
+    )
+    out_path = Path(output_path) if output_path else results_path / "layered-report.html"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(html, encoding="utf-8")
+    typer.echo(f"generate-layered-html-report: wrote {out_path}")
+
+
 @app.command("generate-benchmark-overview")
 def generate_benchmark_overview(
     results_dir: str = typer.Argument(
@@ -440,15 +702,23 @@ def validate_schemas(
     schemas_dir = Path("schemas")
     errors = 0
 
-    # Validate task manifests
     task_schema_path = schemas_dir / "task.schema.json"
-    if task_schema_path.exists():
-        task_schema = json.loads(task_schema_path.read_text())
+    task_v2_schema_path = schemas_dir / "task.v2.schema.json"
+    legacy_task_schema = json.loads(task_schema_path.read_text()) if task_schema_path.exists() else None
+    v2_task_schema = json.loads(task_v2_schema_path.read_text()) if task_v2_schema_path.exists() else None
+    if legacy_task_schema or v2_task_schema:
         tasks_path = Path(tasks_dir)
         for task_file in sorted(tasks_path.glob("*.yaml")):
             try:
                 raw = yaml.safe_load(task_file.read_text(encoding="utf-8"))
-                jsonschema.validate(raw, task_schema)
+                schema = (
+                    v2_task_schema
+                    if isinstance(raw, dict) and (raw.get("schema_version") == 2 or raw.get("version") == "v2")
+                    else legacy_task_schema
+                )
+                if schema is None:
+                    raise RuntimeError("matching task schema not found")
+                jsonschema.validate(raw, schema)
                 typer.echo(f"  PASS  {task_file.name}")
             except jsonschema.ValidationError as exc:
                 typer.echo(f"  FAIL  {task_file.name}: {exc.message}", err=True)

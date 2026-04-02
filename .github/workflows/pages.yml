@@ -1,0 +1,70 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Generate reports
+        run: |
+          uv run atb generate-scorecard benchmarks/results
+          uv run atb generate-html-report benchmarks/results
+          uv run atb generate-benchmark-overview benchmarks/results
+
+      - name: Prepare site
+        run: |
+          mkdir -p _site
+          cp benchmarks/results/report.html _site/
+          cp benchmarks/results/benchmark-overview.html _site/
+          cp benchmarks/results/scorecard*.json _site/
+          cp benchmarks/results/scorecard*.md _site/
+          cat > _site/index.html << 'HEREDOC'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta http-equiv="refresh" content="0; url=report.html">
+            <title>agentic-token-bench</title>
+          </head>
+          <body>
+            <p>Redirecting to <a href="report.html">report</a>...</p>
+          </body>
+          </html>
+          HEREDOC
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

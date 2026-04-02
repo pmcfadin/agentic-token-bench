@@ -10,6 +10,9 @@ from agents.base import AgentAdapter, QualificationResult, ReportedTokens, StepR
 from agents.gemini_cli.adapter import GeminiCliAdapter
 from agents.gemini_cli.parser import extract_tokens_from_output, parse_gemini_output
 
+# Fast model for integration tests — correctness doesn't matter, only adapter plumbing.
+_FAST_MODEL = "gemini-2.5-flash"
+
 
 # ---------------------------------------------------------------------------
 # Fixture data — representative gemini stream-json output
@@ -305,82 +308,94 @@ def test_normalize_on_synthetic_timeout_step_result() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Integration tests — real Gemini CLI binary
+# Integration — shared fixtures (one binary call per fixture, module scope)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def _gemini_probe_result() -> QualificationResult:
+    """Single probe() call shared across all probe integration tests."""
+    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY, model=_FAST_MODEL)
+    return adapter.probe()
+
+
+@pytest.fixture(scope="module")
+def _gemini_run_step_result(tmp_path_factory: pytest.TempPathFactory) -> StepResult:
+    """Single run_step() call shared across all run_step integration tests."""
+    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY, model=_FAST_MODEL)
+    workspace = tmp_path_factory.mktemp("gemini_ws")
+    return adapter.run_step(
+        prompt="Reply with the single word HELLO and nothing else.",
+        step_env=dict(os.environ),
+        workspace=workspace,
+        timeout=120.0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Integration — probe tests (use shared _gemini_probe_result)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _GEMINI_AVAILABLE, reason="Gemini CLI binary not available")
-def test_probe_real_binary_returns_qualification_result() -> None:
+def test_probe_real_binary_returns_qualification_result(
+    _gemini_probe_result: QualificationResult,
+) -> None:
     """probe() against the real Gemini CLI returns a QualificationResult."""
-    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY)
-    result = adapter.probe()
-    assert isinstance(result, QualificationResult)
+    assert isinstance(_gemini_probe_result, QualificationResult)
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _GEMINI_AVAILABLE, reason="Gemini CLI binary not available")
-def test_probe_real_binary_is_qualified() -> None:
+def test_probe_real_binary_is_qualified(
+    _gemini_probe_result: QualificationResult,
+) -> None:
     """probe() against the real Gemini CLI returns qualified=True with token support."""
-    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY)
-    result = adapter.probe()
-    assert result.qualified is True
-    assert result.reported_token_support is True
+    assert _gemini_probe_result.qualified is True
+    assert _gemini_probe_result.reported_token_support is True
+
+
+# ---------------------------------------------------------------------------
+# Integration — run_step tests (use shared _gemini_run_step_result)
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _GEMINI_AVAILABLE, reason="Gemini CLI binary not available")
-def test_run_step_real_binary_returns_step_result(tmp_path: Path) -> None:
+def test_run_step_real_binary_returns_step_result(
+    _gemini_run_step_result: StepResult,
+) -> None:
     """run_step() with the real Gemini CLI returns a StepResult."""
-    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY)
-    sr = adapter.run_step(
-        prompt="Reply with the single word HELLO and nothing else.",
-        step_env=dict(os.environ),
-        workspace=tmp_path,
-        timeout=120.0,
-    )
-    assert isinstance(sr, StepResult)
+    assert isinstance(_gemini_run_step_result, StepResult)
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _GEMINI_AVAILABLE, reason="Gemini CLI binary not available")
-def test_run_step_real_binary_exits_zero(tmp_path: Path) -> None:
+def test_run_step_real_binary_exits_zero(
+    _gemini_run_step_result: StepResult,
+) -> None:
     """run_step() with the real Gemini CLI exits with status 0."""
-    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY)
-    sr = adapter.run_step(
-        prompt="Reply with the single word HELLO and nothing else.",
-        step_env=dict(os.environ),
-        workspace=tmp_path,
-        timeout=120.0,
-    )
-    assert sr.exit_status == 0
+    assert _gemini_run_step_result.exit_status == 0
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _GEMINI_AVAILABLE, reason="Gemini CLI binary not available")
-def test_extract_reported_tokens_real_output(tmp_path: Path) -> None:
+def test_extract_reported_tokens_real_output(
+    _gemini_run_step_result: StepResult,
+) -> None:
     """extract_reported_tokens() returns non-zero counts from real Gemini CLI output."""
-    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY)
-    sr = adapter.run_step(
-        prompt="Reply with the single word HELLO and nothing else.",
-        step_env=dict(os.environ),
-        workspace=tmp_path,
-        timeout=120.0,
-    )
-    tokens = adapter.extract_reported_tokens(sr)
+    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY, model=_FAST_MODEL)
+    tokens = adapter.extract_reported_tokens(_gemini_run_step_result)
     assert isinstance(tokens, ReportedTokens)
     assert tokens.total_tokens > 0
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _GEMINI_AVAILABLE, reason="Gemini CLI binary not available")
-def test_normalize_final_status_real_output(tmp_path: Path) -> None:
+def test_normalize_final_status_real_output(
+    _gemini_run_step_result: StepResult,
+) -> None:
     """normalize_final_status() returns 'completed' for a successful real run."""
-    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY)
-    sr = adapter.run_step(
-        prompt="Reply with the single word HELLO and nothing else.",
-        step_env=dict(os.environ),
-        workspace=tmp_path,
-        timeout=120.0,
-    )
-    assert adapter.normalize_final_status(sr) == "completed"
+    adapter = GeminiCliAdapter(binary_path=_GEMINI_BINARY, model=_FAST_MODEL)
+    assert adapter.normalize_final_status(_gemini_run_step_result) == "completed"

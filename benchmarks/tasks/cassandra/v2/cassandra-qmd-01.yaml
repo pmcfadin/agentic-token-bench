@@ -1,0 +1,98 @@
+schema_version: 2
+deterministic_first: true
+version: v2
+task_id: cassandra-qmd-01-v2
+title: Retrieve the exact gossip-round passage from Gossiper.java
+family: qmd
+repo: cassandra
+pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
+benchmark_mode: deterministic-first
+objective: >
+  Use qmd to retrieve the exact passage that explains Cassandra's gossip
+  target selection during one round. Return the source path, line range, and
+  passage text only.
+task_description: >
+  The Cassandra gossip implementation has been placed in your workspace at
+  `Gossiper.java`.
+
+  Retrieve the narrowest passage that covers:
+  - one random live member being contacted
+  - optional gossip to unreachable members
+  - optional gossip to a seed when required
+
+  Return the exact passage text, source path, and line range. Do not summarize.
+success_criteria:
+  - passage text is copied from Gossiper.java
+  - source path is Gossiper.java
+  - line range matches the quoted passage
+  - no files were modified
+validation_commands:
+  - "python scripts/validate_cassandra_v2_qmd.py --task cassandra-qmd-01-v2"
+fixture_files:
+  - benchmarks/tasks/cassandra/fixtures/Gossiper.java
+input_artifacts:
+  - name: gossiper_source
+    source: benchmarks/tasks/cassandra/fixtures/Gossiper.java
+    target_name: Gossiper.java
+    primary: true
+tool_invocation:
+  tool_id: qmd
+  args:
+    - get
+    - src/java/org/apache/cassandra/gms/Gossiper.java:361
+    - -l
+    - "24"
+  output_artifact: reduced_output.txt
+  baseline_strategy: identity
+  timeout_seconds: 120
+deterministic_checks:
+  - name: exact_gossip_passage
+    command: python scripts/validate_cassandra_v2_qmd.py --task cassandra-qmd-01-v2
+quality_evaluation:
+  question: >
+    Return the exact source path, line range, and passage text that describes
+    the gossip-round target-selection logic.
+  raw_validation_commands:
+    - python scripts/validate_cassandra_v2_qmd.py --task cassandra-qmd-01-v2
+  reduced_validation_commands:
+    - python scripts/validate_cassandra_v2_qmd.py --task cassandra-qmd-01-v2
+  small_model_allowed: true
+  expensive_model_allowed: false
+  escalation_note: >
+    Escalate only if line-accurate retrieval cannot be judged from the answer.
+output_contract:
+  required_fields:
+    - passage_text
+    - source_path
+    - line_range
+  expected_source_path: Gossiper.java
+  expected_line_range: "361-384"
+steps:
+  - step_id: retrieve
+    name: retrieve
+    objective: >
+      Use qmd to retrieve the narrowest passage from `Gossiper.java` that
+      captures gossip target selection in a single round.
+    required_tool: qmd
+    allowed_tools: [qmd]
+    blocked_tools: [ripgrep, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [passage_text, source_path, line_range]
+    artifact_requirements: [step_trace]
+  - step_id: report
+    name: report
+    objective: >
+      Produce the final structured answer with the passage text, source path,
+      and exact line range. No interpretation is needed.
+    required_tool: null
+    allowed_tools: []
+    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
+    completion_contract:
+      kind: structured_answer
+      fields: [passage_text, source_path, line_range]
+    artifact_requirements: [final_answer]
+baseline_policy:
+  remove_tool_under_test: true
+tool_variant_policy:
+  enforce_tool_under_test: true

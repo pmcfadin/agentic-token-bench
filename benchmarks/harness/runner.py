@@ -8,6 +8,7 @@ from __future__ import annotations
 __all__ = ["BenchmarkRunner"]
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,9 +31,10 @@ from benchmarks.harness.models import (
 from benchmarks.harness.prompts import render_step_prompt
 from benchmarks.harness.step_executor import StepExecutor
 from benchmarks.harness.tracing import EventWriter, InvocationWriter
-from benchmarks.harness.validation import run_all_validations
+from benchmarks.harness.validation import run_validation_command
 
 logger = logging.getLogger(__name__)
+ProgressCallback = Callable[[str], None]
 
 
 def _generate_run_id(task_id: str, variant: str, started_at: datetime) -> str:
@@ -78,6 +80,7 @@ class BenchmarkRunner:
         variant: str,
         workspace: Path,
         tool_wrappers: dict[str, Path] | None = None,
+        progress: ProgressCallback | None = None,
     ) -> RunRecord:
         """Execute all steps in *task* and return a populated RunRecord.
 
@@ -94,11 +97,17 @@ class BenchmarkRunner:
             A fully populated :class:`RunRecord` with status, validity, and
             artifact paths set.
         """
+        def _emit(message: str) -> None:
+            if progress is not None:
+                progress(message)
+
         started_at = datetime.now(tz=timezone.utc)
         run_id = _generate_run_id(task.task_id, variant, started_at)
+        _emit(f"run-task: starting {task.task_id} [{variant}] as {run_id}")
 
         # --- artifact directory ---
         artifact_dir = create_artifact_dir(self._results_dir, run_id)
+        _emit(f"run-task: artifacts at {artifact_dir}")
 
         # --- tracing writers ---
         event_writer = EventWriter(artifact_dir / "trace.jsonl")
@@ -111,12 +120,36 @@ class BenchmarkRunner:
         wrappers: dict[str, Path] = tool_wrappers or {}
         executor = StepExecutor(wrappers)
 
+        # Copy fixture files into workspace before running any steps.
+        if task.fixture_files:
+            import shutil
+            project_root = Path(__file__).resolve().parent.parent.parent
+            for rel_path in task.fixture_files:
+                src = project_root / rel_path
+                dst = workspace / Path(rel_path).name
+                if src.exists():
+                    shutil.copy2(src, dst)
+                else:
+                    logger.warning("Fixture file not found, skipping: %s", src)
+        _emit(f"run-task: workspace ready at {workspace}")
+
         # Accumulated state across steps.
         all_steps_enforcement_valid = True
         last_step_result = None
         run_status = RunStatus.passed
 
         for step_index, step in enumerate(task.steps):
+            _emit(
+                f"step {step_index + 1}/{len(task.steps)}: {step.step_id}"
+                f" ({step.name})"
+            )
+            if step.required_tool:
+                _emit(
+                    f"step {step.step_id}: required tool={step.required_tool}"
+                    f", allowed={','.join(step.allowed_tools) if step.allowed_tools else '[]'}"
+                    f", blocked={','.join(step.blocked_tools) if step.blocked_tools else '[]'}"
+                )
+
             # Write step_started event.
             event_writer.write_event(
                 EventRecord(
@@ -135,8 +168,10 @@ class BenchmarkRunner:
             # Render prompt using canonical prompts module.
             prompt = render_step_prompt(task, step, variant)
             write_prompt(artifact_dir, prompt)
+            _emit(f"step {step.step_id}: prompt written to {artifact_dir / 'prompt.txt'}")
 
             # Execute step via the adapter.
+            _emit(f"step {step.step_id}: invoking {type(adapter).__name__} (timeout=300s)")
             try:
                 step_result = adapter.run_step(
                     prompt=prompt,
@@ -147,6 +182,7 @@ class BenchmarkRunner:
                 last_step_result = step_result
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Adapter raised during step %s", step.step_id)
+                _emit(f"step {step.step_id}: adapter error: {exc}")
                 event_writer.write_event(
                     EventRecord(
                         timestamp=datetime.now(tz=timezone.utc),
@@ -176,6 +212,7 @@ class BenchmarkRunner:
                     finished_at=finished_at,
                 )
                 write_run_record(artifact_dir, record)
+                _emit(f"run-task: wrote {artifact_dir / 'run.json'}")
                 return record
 
             # Write step_finished event.
@@ -191,6 +228,10 @@ class BenchmarkRunner:
                         "step_metadata": step_result.step_metadata,
                     },
                 )
+            )
+            _emit(
+                f"step {step.step_id}: finished exit={step_result.exit_status}"
+                f" status={step_result.step_metadata.get('status', 'unknown')}"
             )
 
             # Extract tool invocations from trace_metadata if available.
@@ -245,6 +286,9 @@ class BenchmarkRunner:
                     enforcement_reason,
                 )
                 all_steps_enforcement_valid = False
+                _emit(f"step {step.step_id}: enforcement failed: {enforcement_reason}")
+            else:
+                _emit(f"step {step.step_id}: enforcement passed")
 
             # Determine per-step run_status (worst wins).
             if step_result.exit_status != 0 and run_status == RunStatus.passed:
@@ -264,9 +308,26 @@ class BenchmarkRunner:
             except Exception:  # noqa: BLE001
                 answer_text = stdout
             write_final_answer(artifact_dir, answer_text)
+            _emit(f"run-task: wrote {artifact_dir / 'final_answer.txt'}")
 
         # --- post-step: run validation commands ---
-        validation_results = run_all_validations(task.validation_commands, artifact_dir)
+        validation_results = []
+        if task.validation_commands:
+            _emit(
+                f"run-task: running {len(task.validation_commands)} validation command(s)"
+            )
+        else:
+            _emit("run-task: no validation commands defined")
+
+        for validation_index, command in enumerate(task.validation_commands, start=1):
+            _emit(f"validation {validation_index}/{len(task.validation_commands)}: {command}")
+            result = run_validation_command(command, artifact_dir)
+            validation_results.append(result)
+            _emit(
+                f"validation {validation_index}/{len(task.validation_commands)}:"
+                f" exit={result.exit_code} status={result.status.value}"
+                f" duration={result.duration_seconds:.1f}s"
+            )
 
         if not validation_results:
             validation_status = ValidationStatus.skipped
@@ -288,8 +349,13 @@ class BenchmarkRunner:
                 reported_input = reported_tokens.input_tokens
                 reported_output = reported_tokens.output_tokens
                 reported_total = reported_tokens.total_tokens
+                _emit(
+                    "run-task: reported tokens "
+                    f"input={reported_input} output={reported_output} total={reported_total}"
+                )
             except Exception:  # noqa: BLE001
                 logger.debug("Could not extract reported tokens for run %s", run_id)
+                _emit("run-task: could not extract reported tokens")
 
         # --- classify run validity ---
         validity = _classify_validity(all_steps_enforcement_valid, validation_status)
@@ -318,6 +384,12 @@ class BenchmarkRunner:
         )
 
         write_run_record(artifact_dir, record)
+        _emit(f"run-task: wrote {artifact_dir / 'run.json'}")
+        _emit(
+            f"run-task: finished status={run_status.value}"
+            f" validity={validity.value} tokens={reported_total}"
+            f" elapsed={elapsed:.1f}s"
+        )
 
         event_writer.write_event(
             EventRecord(

@@ -41,8 +41,9 @@ class CodexAdapter(AgentAdapter):
             ``"codex"`` which resolves via ``$PATH``.
     """
 
-    def __init__(self, binary_path: str = "codex") -> None:
+    def __init__(self, binary_path: str = "codex", model: str | None = None) -> None:
         self._binary_path = binary_path
+        self._model = model
         self._available: bool = shutil.which(binary_path) is not None
 
     # ------------------------------------------------------------------
@@ -173,8 +174,10 @@ class CodexAdapter(AgentAdapter):
             "--json",
             "--ephemeral",
             "--skip-git-repo-check",
-            prompt,
         ]
+        if self._model:
+            cmd += ["--model", self._model]
+        cmd.append(prompt)
 
         env: dict[str, str] | None = step_env if step_env else None
 

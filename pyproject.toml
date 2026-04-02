@@ -33,6 +33,7 @@ atb = "benchmarks.harness.cli:app"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-xdist>=3.0",
     "ruff>=0.9",
     "jsonschema>=4.0",
 ]
@@ -43,6 +44,7 @@ line-length = 99
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-n 1"
 markers = [
     "smoke: smoke tests for CI",
     "integration: tests requiring real agent CLI binaries",

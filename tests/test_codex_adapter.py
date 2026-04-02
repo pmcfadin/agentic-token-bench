@@ -17,6 +17,9 @@ from agents.codex.parser import (
 
 _CODEX_AVAILABLE = shutil.which("codex") is not None
 
+# Fast model for integration tests — correctness doesn't matter, only adapter plumbing.
+_FAST_MODEL = "gpt-5.4-mini"
+
 # ---------------------------------------------------------------------------
 # Fixture data: JSON Lines output
 # ---------------------------------------------------------------------------
@@ -89,7 +92,7 @@ hello
 class TestCodexAdapterInstantiation:
     def test_default_binary_path(self) -> None:
         """CodexAdapter uses 'codex' as the default binary path."""
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         assert adapter._binary_path == "codex"
 
     def test_custom_binary_path(self) -> None:
@@ -267,41 +270,41 @@ class TestNormalizeFinalStatus:
         )
 
     def test_exit_zero_is_completed(self) -> None:
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         assert adapter.normalize_final_status(self._make_result(0)) == "completed"
 
     def test_exit_one_is_failed(self) -> None:
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         assert adapter.normalize_final_status(self._make_result(1)) == "failed"
 
     def test_exit_two_is_failed(self) -> None:
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         assert adapter.normalize_final_status(self._make_result(2)) == "failed"
 
     def test_exit_124_is_timeout(self) -> None:
         """Exit code 124 (GNU timeout) maps to 'timeout'."""
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         assert adapter.normalize_final_status(self._make_result(124)) == "timeout"
 
     def test_exit_143_is_timeout(self) -> None:
         """Exit code 143 (SIGTERM) maps to 'timeout'."""
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         assert adapter.normalize_final_status(self._make_result(143)) == "timeout"
 
     def test_timed_out_flag_overrides_exit_code(self) -> None:
         """timed_out=True in step_metadata always yields 'timeout'."""
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         result = self._make_result(0, timed_out=True)
         assert adapter.normalize_final_status(result) == "timeout"
 
     def test_unknown_exit_code_is_failed(self) -> None:
         """Unmapped exit codes default to 'failed'."""
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         assert adapter.normalize_final_status(self._make_result(99)) == "failed"
 
     def test_exit_127_is_failed(self) -> None:
         """Exit 127 (command not found) maps to 'failed'."""
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         assert adapter.normalize_final_status(self._make_result(127)) == "failed"
 
 
@@ -321,37 +324,37 @@ class TestExtractReportedTokens:
         )
 
     def test_returns_reported_tokens_instance(self) -> None:
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         result = self._make_result_with_stdout(FIXTURE_JSONL_OUTPUT)
         tokens = adapter.extract_reported_tokens(result)
         assert isinstance(tokens, ReportedTokens)
 
     def test_input_tokens_correct(self) -> None:
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         result = self._make_result_with_stdout(FIXTURE_JSONL_OUTPUT)
         tokens = adapter.extract_reported_tokens(result)
         assert tokens.input_tokens == 12806
 
     def test_output_tokens_correct(self) -> None:
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         result = self._make_result_with_stdout(FIXTURE_JSONL_OUTPUT)
         tokens = adapter.extract_reported_tokens(result)
         assert tokens.output_tokens == 66
 
     def test_total_tokens_correct(self) -> None:
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         result = self._make_result_with_stdout(FIXTURE_JSONL_OUTPUT)
         tokens = adapter.extract_reported_tokens(result)
         assert tokens.total_tokens == 12806 + 66
 
     def test_evidence_snippet_nonempty(self) -> None:
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         result = self._make_result_with_stdout(FIXTURE_JSONL_OUTPUT)
         tokens = adapter.extract_reported_tokens(result)
         assert tokens.evidence_snippet != ""
 
     def test_raises_on_empty_output(self) -> None:
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=_FAST_MODEL)
         result = self._make_result_with_stdout(FIXTURE_PLAINTEXT_NO_TOKENS)
         with pytest.raises(ValueError):
             adapter.extract_reported_tokens(result)
@@ -372,116 +375,128 @@ class TestProbeUnavailable:
 
 
 # ---------------------------------------------------------------------------
+# Integration — shared fixtures (one binary call per fixture, module scope)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def _codex_probe_result() -> QualificationResult:
+    """Single probe() call shared across all probe integration tests."""
+    adapter = CodexAdapter(model=_FAST_MODEL)
+    return adapter.probe()
+
+
+@pytest.fixture(scope="module")
+def _codex_run_step_result(tmp_path_factory: pytest.TempPathFactory) -> StepResult:
+    """Single run_step() call shared across all run_step integration tests."""
+    adapter = CodexAdapter(model=_FAST_MODEL)
+    workspace = tmp_path_factory.mktemp("codex_ws")
+    return adapter.run_step(
+        prompt="Reply with the single word: hello",
+        step_env={},
+        workspace=workspace,
+        timeout=120.0,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Integration / real binary tests (skipped when binary absent)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _CODEX_AVAILABLE, reason="codex binary not installed")
-class TestCodexAdapterRealBinary:
-    def test_adapter_available(self) -> None:
-        """CodexAdapter._available is True when the binary exists on PATH."""
-        adapter = CodexAdapter()
-        assert adapter._available is True
+def test_adapter_available() -> None:
+    """CodexAdapter._available is True when the binary exists on PATH."""
+    adapter = CodexAdapter(model=_FAST_MODEL)
+    assert adapter._available is True
 
-    def test_run_step_returns_step_result(self, tmp_path: Path) -> None:
-        """run_step() invokes the real codex binary and returns a StepResult."""
-        adapter = CodexAdapter()
-        result = adapter.run_step(
-            prompt="Reply with the single word: hello",
-            step_env={},
-            workspace=tmp_path,
-            timeout=120.0,
-        )
-        assert isinstance(result, StepResult)
-        assert result.exit_status == 0
 
-    def test_run_step_captures_stdout(self, tmp_path: Path) -> None:
-        """run_step() captures non-empty stdout from the real codex invocation."""
-        adapter = CodexAdapter()
-        result = adapter.run_step(
-            prompt="Reply with the single word: hello",
-            step_env={},
-            workspace=tmp_path,
-            timeout=120.0,
-        )
-        assert isinstance(result.stdout, str)
-        assert len(result.stdout) > 0
+@pytest.mark.integration
+@pytest.mark.skipif(not _CODEX_AVAILABLE, reason="codex binary not installed")
+def test_run_step_returns_step_result(_codex_run_step_result: StepResult) -> None:
+    """run_step() invokes the real codex binary and returns a StepResult."""
+    assert isinstance(_codex_run_step_result, StepResult)
+    assert _codex_run_step_result.exit_status == 0
 
-    def test_run_step_step_metadata_contains_binary_path(self, tmp_path: Path) -> None:
-        """run_step() records the binary path in step_metadata."""
-        adapter = CodexAdapter()
-        result = adapter.run_step(
-            prompt="Reply with the single word: hello",
-            step_env={},
-            workspace=tmp_path,
-            timeout=120.0,
-        )
-        assert "binary_path" in result.step_metadata
-        assert result.step_metadata["binary_path"] == "codex"
 
-    def test_run_step_trace_metadata_contains_events(self, tmp_path: Path) -> None:
-        """run_step() populates trace_metadata['events'] from JSON Lines output."""
-        adapter = CodexAdapter()
-        result = adapter.run_step(
-            prompt="Reply with the single word: hello",
-            step_env={},
-            workspace=tmp_path,
-            timeout=120.0,
-        )
-        assert isinstance(result.trace_metadata["events"], list)
-        assert len(result.trace_metadata["events"]) > 0
+@pytest.mark.integration
+@pytest.mark.skipif(not _CODEX_AVAILABLE, reason="codex binary not installed")
+def test_run_step_captures_stdout(_codex_run_step_result: StepResult) -> None:
+    """run_step() captures non-empty stdout from the real codex invocation."""
+    assert isinstance(_codex_run_step_result.stdout, str)
+    assert len(_codex_run_step_result.stdout) > 0
 
-    def test_extract_reported_tokens_from_real_run(self, tmp_path: Path) -> None:
-        """extract_reported_tokens() returns valid counts from a real codex run."""
-        adapter = CodexAdapter()
-        result = adapter.run_step(
-            prompt="Reply with the single word: hello",
-            step_env={},
-            workspace=tmp_path,
-            timeout=120.0,
-        )
-        tokens = adapter.extract_reported_tokens(result)
-        assert isinstance(tokens, ReportedTokens)
-        assert tokens.total_tokens > 0
 
-    def test_extract_reported_tokens_evidence_snippet_nonempty(
-        self, tmp_path: Path
-    ) -> None:
-        """extract_reported_tokens() includes a non-empty evidence snippet."""
-        adapter = CodexAdapter()
-        result = adapter.run_step(
-            prompt="Reply with the single word: hello",
-            step_env={},
-            workspace=tmp_path,
-            timeout=120.0,
-        )
-        tokens = adapter.extract_reported_tokens(result)
-        assert tokens.evidence_snippet != ""
+@pytest.mark.integration
+@pytest.mark.skipif(not _CODEX_AVAILABLE, reason="codex binary not installed")
+def test_run_step_step_metadata_contains_binary_path(
+    _codex_run_step_result: StepResult,
+) -> None:
+    """run_step() records the binary path in step_metadata."""
+    assert "binary_path" in _codex_run_step_result.step_metadata
+    assert _codex_run_step_result.step_metadata["binary_path"] == "codex"
 
-    def test_normalize_final_status_on_real_success(self, tmp_path: Path) -> None:
-        """normalize_final_status() returns 'completed' for a successful real run."""
-        adapter = CodexAdapter()
-        result = adapter.run_step(
-            prompt="Reply with the single word: hello",
-            step_env={},
-            workspace=tmp_path,
-            timeout=120.0,
-        )
-        status = adapter.normalize_final_status(result)
-        assert status == "completed"
 
-    def test_probe_returns_qualification_result(self) -> None:
-        """probe() returns a QualificationResult when the real binary is present."""
-        adapter = CodexAdapter()
-        result = adapter.probe()
-        assert isinstance(result, QualificationResult)
+@pytest.mark.integration
+@pytest.mark.skipif(not _CODEX_AVAILABLE, reason="codex binary not installed")
+def test_run_step_trace_metadata_contains_events(
+    _codex_run_step_result: StepResult,
+) -> None:
+    """run_step() populates trace_metadata['events'] from JSON Lines output."""
+    assert isinstance(_codex_run_step_result.trace_metadata["events"], list)
+    assert len(_codex_run_step_result.trace_metadata["events"]) > 0
 
-    def test_probe_qualified_with_real_binary(self) -> None:
-        """probe() passes all qualification gates against the real codex binary."""
-        adapter = CodexAdapter()
-        result = adapter.probe()
-        assert result.qualified is True
-        assert result.reported_token_support is True
-        assert result.trace_support is True
-        assert result.run_completion_support is True
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CODEX_AVAILABLE, reason="codex binary not installed")
+def test_extract_reported_tokens_from_real_run(
+    _codex_run_step_result: StepResult,
+) -> None:
+    """extract_reported_tokens() returns valid counts from a real codex run."""
+    adapter = CodexAdapter(model=_FAST_MODEL)
+    tokens = adapter.extract_reported_tokens(_codex_run_step_result)
+    assert isinstance(tokens, ReportedTokens)
+    assert tokens.total_tokens > 0
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CODEX_AVAILABLE, reason="codex binary not installed")
+def test_extract_reported_tokens_evidence_snippet_nonempty(
+    _codex_run_step_result: StepResult,
+) -> None:
+    """extract_reported_tokens() includes a non-empty evidence snippet."""
+    adapter = CodexAdapter(model=_FAST_MODEL)
+    tokens = adapter.extract_reported_tokens(_codex_run_step_result)
+    assert tokens.evidence_snippet != ""
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CODEX_AVAILABLE, reason="codex binary not installed")
+def test_normalize_final_status_on_real_success(
+    _codex_run_step_result: StepResult,
+) -> None:
+    """normalize_final_status() returns 'completed' for a successful real run."""
+    adapter = CodexAdapter(model=_FAST_MODEL)
+    assert adapter.normalize_final_status(_codex_run_step_result) == "completed"
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CODEX_AVAILABLE, reason="codex binary not installed")
+def test_probe_returns_qualification_result(
+    _codex_probe_result: QualificationResult,
+) -> None:
+    """probe() returns a QualificationResult when the real binary is present."""
+    assert isinstance(_codex_probe_result, QualificationResult)
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _CODEX_AVAILABLE, reason="codex binary not installed")
+def test_probe_qualified_with_real_binary(
+    _codex_probe_result: QualificationResult,
+) -> None:
+    """probe() passes all qualification gates against the real codex binary."""
+    assert _codex_probe_result.qualified is True
+    assert _codex_probe_result.reported_token_support is True
+    assert _codex_probe_result.trace_support is True
+    assert _codex_probe_result.run_completion_support is True

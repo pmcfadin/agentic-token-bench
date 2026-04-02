@@ -28,8 +28,9 @@ class ClaudeAdapter(AgentAdapter):
             absolute path when the binary is not on PATH.
     """
 
-    def __init__(self, binary_path: str = "claude") -> None:
+    def __init__(self, binary_path: str = "claude", model: str | None = None) -> None:
         self._binary_path = binary_path
+        self._model = model
 
     # ------------------------------------------------------------------
     # AgentAdapter abstract method implementations
@@ -48,9 +49,12 @@ class ClaudeAdapter(AgentAdapter):
             extraction succeeds and the process exits cleanly.
         """
         probe_prompt = "Reply with the single word 'ok' and nothing else."
+        cmd = [self._binary_path, "-p", probe_prompt, "--output-format", "json"]
+        if self._model:
+            cmd += ["--model", self._model]
         try:
             proc = subprocess.run(
-                [self._binary_path, "-p", probe_prompt, "--output-format", "json"],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=60.0,
@@ -138,6 +142,8 @@ class ClaudeAdapter(AgentAdapter):
             from the JSON output (if available).
         """
         cmd = [self._binary_path, "-p", prompt, "--output-format", "json"]
+        if self._model:
+            cmd += ["--model", self._model]
         start = time.perf_counter()
         timed_out = False
 

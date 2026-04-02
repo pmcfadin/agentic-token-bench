@@ -1,0 +1,53 @@
+version: "3"
+
+tasks:
+  default:
+    desc: Run setup, benchmarks, and reports
+    deps: [setup]
+    cmds:
+      - task: bench
+      - task: report
+
+  setup:
+    desc: Install dependencies and clone Cassandra if needed
+    cmds:
+      - uv sync
+      - task: setup:cassandra
+
+  setup:cassandra:
+    desc: Clone Cassandra at the pinned commit (skips if already present)
+    vars:
+      CHECKOUT: benchmarks/repos/cassandra/checkout
+    cmds:
+      - |
+        if [ ! -d "{{.CHECKOUT}}/.git" ]; then
+          git clone --depth 1 --branch cassandra-5.0.7 https://github.com/apache/cassandra.git {{.CHECKOUT}}
+        fi
+      - |
+        if ! qmd collection list 2>/dev/null | grep -q cassandra; then
+          qmd collection add {{.CHECKOUT}} --name cassandra
+          qmd update
+        fi
+
+  test:
+    desc: Lint and run tests
+    cmds:
+      - uv run ruff check .
+      - uv run ruff format --check .
+      - uv run pytest
+
+  bench:
+    desc: Run all v2 tool-only benchmark tasks
+    cmds:
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-rtk-01.yaml
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-rtk-02.yaml
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-qmd-01.yaml
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-qmd-02.yaml
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-ripgrep-01.yaml
+      - uv run atb run-tool-task benchmarks/tasks/cassandra/v2/cassandra-ripgrep-02.yaml
+
+  report:
+    desc: Generate layered scorecards and HTML report
+    cmds:
+      - uv run atb generate-layered-scorecards
+      - uv run atb generate-layered-html-report

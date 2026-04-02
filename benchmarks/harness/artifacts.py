@@ -6,14 +6,19 @@ See docs/plans/2026-03-31-v1-build-plan-design.md for responsibilities.
 from __future__ import annotations
 
 __all__ = [
+    "copy_artifact",
     "create_artifact_dir",
+    "write_json_artifact",
     "write_run_record",
     "write_prompt",
+    "write_text_artifact",
     "write_diff",
     "write_final_answer",
 ]
 
 from pathlib import Path
+import json
+import shutil
 
 from benchmarks.harness.models import RunRecord
 
@@ -49,6 +54,27 @@ def write_run_record(artifact_dir: Path, record: RunRecord) -> Path:
     run_json = artifact_dir / "run.json"
     run_json.write_text(record.model_dump_json(indent=2), encoding="utf-8")
     return run_json
+
+
+def write_json_artifact(artifact_dir: Path, filename: str, payload: dict | list) -> Path:
+    """Write a JSON artifact into *artifact_dir*."""
+    path = artifact_dir / filename
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
+
+
+def write_text_artifact(artifact_dir: Path, filename: str, content: str) -> Path:
+    """Write an arbitrary text artifact into *artifact_dir*."""
+    path = artifact_dir / filename
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def copy_artifact(src: Path, dst: Path) -> Path:
+    """Copy *src* to *dst*, creating parent directories as needed."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return dst
 
 
 def write_prompt(artifact_dir: Path, prompt: str) -> Path:

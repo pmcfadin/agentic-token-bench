@@ -4,26 +4,25 @@ family: rtk
 repo: cassandra
 pinned_commit: "0269fd5665751e8a6d8eab852e0f66c142b10ee6"
 objective: >
-  Run the Cassandra unit test suite for a targeted package and use rtk to
-  compress the output, preserving only the error that should drive the next
-  repair step.
+  Use rtk to compress a pre-captured Cassandra test log, preserving only the
+  error that should drive the next repair step.
 task_description: >
-  Cassandra's test suite produces verbose output. When a unit test fails, the
-  raw output includes stack traces, fixture setup logs, and passing test
-  summaries that obscure the root cause. Your task is to:
+  A pre-captured Cassandra unit test log has been placed in your workspace
+  at `cassandra-test-failure.log`. The log was produced by running
+  `ant test -Dtest.name=CompactionManagerTest`. It includes verbose setup
+  logs, passing test summaries, and stack traces that obscure the root cause.
 
-  (1) Run `ant test -Dtest.name=CompactionManagerTest` in the Cassandra
-  repository root to produce test output.
+  Your task is to:
 
-  (2) Use rtk to compress the raw test output so that noise is removed while
-  the failing test name, the exception type, and the relevant message are
-  preserved.
+  (1) Use rtk to compress `cassandra-test-failure.log` so that noise is
+  removed while the failing test name, the exception type, and the relevant
+  message are preserved.
 
-  (3) Identify the specific exception or assertion failure that should drive
+  (2) Identify the specific exception or assertion failure that should drive
   the next fix step.
 
-  Do not attempt to fix the failing test. Produce a structured answer with the
-  compressed output, the failing test method name, and the exception or
+  Do not attempt to fix the failing test. Produce a structured answer with
+  the compressed output, the failing test method name, and the exception or
   assertion message.
 success_criteria:
   - rtk was used to compress the test output
@@ -35,24 +34,15 @@ validation_commands:
 human_review_triggers:
   - "compressed output omits the exception message"
   - "failing test name does not match actual test runner output"
+fixture_files:
+  - benchmarks/tasks/cassandra/fixtures/cassandra-test-failure.log
 steps:
-  - step_id: discover
-    name: discover
-    objective: >
-      Run `ant test -Dtest.name=CompactionManagerTest` in the repository root
-      to produce test output. Capture the raw output for the next step.
-    required_tool: null
-    allowed_tools: []
-    blocked_tools: [ripgrep, qmd, rtk, fastmod, ast-grep, comby]
-    completion_contract:
-      kind: structured_answer
-      fields: [raw_output_path]
-    artifact_requirements: [step_trace]
   - step_id: analyze
     name: analyze
     objective: >
-      Use rtk to compress the raw test output. Extract the failing test method
-      name, the exception type, and the assertion or error message.
+      Use rtk to compress `cassandra-test-failure.log` in your workspace.
+      Extract the failing test method name, the exception type, and the
+      assertion or error message.
     required_tool: rtk
     allowed_tools: [rtk]
     blocked_tools: [ripgrep, qmd, fastmod, ast-grep, comby]

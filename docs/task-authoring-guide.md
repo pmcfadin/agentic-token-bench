@@ -4,6 +4,11 @@ This guide explains how to write official benchmark tasks for agentic-token-benc
 All tasks must conform to `schemas/task.schema.json` and the rules in
 `docs/plans/2026-03-31-v1-build-plan-design.md`.
 
+This guide also introduces the v2 deterministic-first direction. New work
+should minimize LLM use unless a downstream evaluation stage truly needs a
+semantic judgment. The legacy v1 step-manifest format remains supported for
+compatibility and historical reproduction.
+
 ## Quick start
 
 Copy `benchmarks/tasks/task-template.yaml` and edit it. Validate your task
@@ -12,6 +17,27 @@ before opening a pull request:
 ```bash
 uv run atb validate-schemas
 ```
+
+For v2-style task design, check the deterministic-first requirements below
+before you lock the manifest. For legacy v1 tasks, schema validation is the
+existing gate.
+
+## v2 task model
+
+v2 tasks are phase-based rather than prompt-stage based. A v2 task should
+describe:
+
+- the input artifact(s) and fixture source
+- the tool invocation contract
+- the deterministic preservation or correctness checks
+- any optional downstream evaluation question(s)
+- the evaluator policy, including when a small model is acceptable and when an
+  expensive model is allowed only as a last resort
+
+The default rule is simple: use deterministic validation first, then bring in
+an LLM only if a human-quality judgment is still needed. Do not force every
+task through a summarize-style free-form answer when the artifact can be
+checked directly.
 
 ---
 
@@ -35,14 +61,15 @@ Keep it under 80 characters.
 
 ### `family`
 
-The tool family this task belongs to. Must be one of the v1 official families:
+The tool family this task belongs to. Must be one of the official families:
 `ripgrep`, `qmd`, `rtk`, `fastmod`, `ast-grep`, `comby`.
 
 Each family must have exactly two official tasks (`-01` and `-02`).
 
 ### `repo`
 
-The target repository. For v1 this is always `cassandra`.
+The target repository. For the Cassandra benchmark this is always
+`cassandra`.
 
 ### `pinned_commit`
 
@@ -126,15 +153,16 @@ in the step where it is required.
 
 ---
 
-## Step model
+## Legacy v1 step model
 
-Steps are the execution units of a task. Each task has one or more steps that
-run in order. The harness creates a separate constrained environment for each
-step.
+Steps are the execution units of a legacy v1 task. Each task has one or more
+steps that run in order. The harness creates a separate constrained environment
+for each step.
 
 ### Available step types
 
-V1 tasks use these step identifiers. Use them as both `step_id` and `name`.
+Legacy v1 tasks use these step identifiers. Use them as both `step_id` and
+`name`.
 
 | Step | Purpose |
 |------|---------|
@@ -148,6 +176,10 @@ V1 tasks use these step identifiers. Use them as both `step_id` and `name`.
 Not every task needs all six steps. A simple discovery task may need only
 `discover` and `summarize`. An edit task may need `discover`, `retrieve`,
 `edit`, `validate`, and `summarize`.
+
+For v2, the equivalent behavior should be expressed as a tool phase plus
+deterministic checks, not as a free-form summarize prompt, unless the summarize
+step is the only place where a downstream quality judgment can be made.
 
 ### Step fields
 
@@ -204,9 +236,12 @@ completion_contract:
   fields: [field_one, field_two]
 ```
 
-`kind` is always `structured_answer` in v1. `fields` lists the named outputs
-the agent must provide. The final step's fields must map directly to the
-task's `success_criteria`.
+`kind` is always `structured_answer` in legacy v1 tasks. `fields` lists the
+named outputs the agent must provide. The final step's fields must map
+directly to the task's `success_criteria`.
+
+For v2, prefer direct artifact checks wherever possible instead of relying on
+a final free-form answer.
 
 #### `artifact_requirements`
 
@@ -260,8 +295,12 @@ A run is **invalid** (excluded from official scorecards) if:
 
 ## Baseline vs tool_variant policies
 
-Each official task runs twice: once as `baseline` and once as `tool_variant`.
-The comparison between these two runs is the benchmark result.
+These policies describe the legacy v1 comparison model. Each official task runs
+twice: once as `baseline` and once as `tool_variant`. The comparison between
+these two runs is the legacy benchmark result.
+
+For v2, keep the same family boundaries, but separate tool execution from
+downstream quality evaluation so the LLM only appears where it adds value.
 
 ### Baseline variant
 
@@ -281,14 +320,14 @@ Set `tool_variant_policy.enforce_tool_under_test: true` in every official task.
 
 ### What the comparison measures
 
-The official benchmark question for each family is:
+The legacy v1 benchmark question for each family is:
 
 > Did the enforced tool reduce reported token usage compared with the baseline,
 > while preserving or improving correctness?
 
 To keep attribution clean, each task family tests exactly one tool. Do not add
 a second benchmark tool to the `allowed_tools` list for a tool family's official
-tasks. Mixed-tool workflows belong in the appendix (Track B).
+tasks. Mixed-tool workflows belong in the appendix (legacy Track B).
 
 ---
 
@@ -306,7 +345,9 @@ answer mechanically. Human review is the fallback, not the default.
 
 Each task tests one tool family. Do not write tasks that require multiple
 benchmark tools to complete. If you find yourself adding two tools to
-`required_tool`, split the task.
+`required_tool`, split the task. For v2, this also means do not combine tool
+execution and downstream LLM judgment in the same required step unless the
+task's only purpose is to study that handoff.
 
 ### Use the pinned commit
 
@@ -331,6 +372,9 @@ information not yet available at that point in the sequence.
 In the `summarize` step (and any step where you want to prevent benchmark tool
 use), list all six official tool families in `blocked_tools`. Leaving a tool
 off the blocked list means the agent can silently use it without detection.
+
+For v2 tasks, prefer direct artifact validation over summarize-step blocking
+when the artifact itself can answer the question.
 
 ### Final step must produce `final_answer`
 
@@ -361,6 +405,10 @@ benchmarks/tasks/cassandra/appendix/
 
 Do not place official tasks in the appendix directory or vice versa.
 
+Legacy v1 official tasks belong in `official/`. Any future v2 appendix or
+compatibility workflows should be labeled explicitly so readers do not confuse
+them with the deterministic-first official path.
+
 ---
 
 ## Validation script contract
@@ -376,3 +424,7 @@ Validation scripts must:
 
 Partial pass (`exit 2`) triggers human review if `human_review_triggers` are
 also satisfied.
+
+For v2-style tasks, validation scripts may validate artifacts directly and may
+supplement deterministic checks with an optional downstream quality-eval
+result. Keep the machine-readable summary explicit about which stage failed.
