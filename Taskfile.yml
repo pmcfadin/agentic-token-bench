@@ -73,3 +73,8 @@ tasks:
     cmds:
       - uv run atb generate-layered-scorecards
       - uv run atb generate-layered-html-report
+
+  export-data:
+    desc: Export benchmark numbers to benchmark-data.json for the public results page
+    cmds:
+      - uv run atb export-data

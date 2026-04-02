@@ -1,0 +1,46 @@
+name: Submit a Tool
+description: Propose a CLI tool for inclusion in the agentic-token-bench benchmark suite
+title: "[Tool submission] <tool name>"
+labels: ["tool-submission"]
+body:
+  - type: input
+    id: tool_name
+    attributes:
+      label: Tool name
+      description: The name of the CLI tool (e.g. ripgrep, ast-grep, qmd)
+      placeholder: my-tool
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case (one sentence)
+      description: What developer task does this tool accelerate? Lead with the action.
+      placeholder: Find which files contain a pattern across a large codebase.
+    validations:
+      required: true
+
+  - type: textarea
+    id: sample_command
+    attributes:
+      label: Sample command
+      description: The exact CLI invocation an agent would run, including representative arguments.
+      placeholder: "rg -l read_repair_chance ."
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: why_it_fits
+    attributes:
+      label: Why it fits the benchmark criteria
+      description: |
+        The benchmark accepts tools that meet all three criteria:
+        1. Takes file or codebase input
+        2. Produces smaller, targeted output (diff, filtered results, index)
+        3. Output is deterministic — same input always yields the same output
+
+        Explain how this tool satisfies each criterion.
+    validations:
+      required: true

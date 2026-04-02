@@ -705,6 +705,100 @@ def generate_benchmark_overview(
     typer.echo(f"generate-benchmark-overview: wrote {out_path}")
 
 
+@app.command("export-data")
+def export_data(
+    results_dir: str = typer.Argument(default="benchmarks/results", help="Results directory containing scorecards"),
+    tasks_dir: str = typer.Option(
+        default="benchmarks/tasks/cassandra/v2",
+        help="Directory containing v2 task YAML manifests",
+    ),
+    output_path: str = typer.Option(
+        default="",
+        help="Output JSON file (defaults to <results_dir>/benchmark-data.json)",
+    ),
+) -> None:
+    """Export benchmark numbers as benchmark-data.json for the public results page.
+
+    Reads tool-efficacy-scorecard.json from results_dir and v2 task YAMLs from
+    tasks_dir to produce a compact JSON suitable for rendering tool cards on
+    patrickmcfadin.com/tokenmaxxing. Tools are sorted by reduction_pct descending.
+
+    Run after: task bench && task report
+    """
+    results_path = Path(results_dir)
+    scorecard_path = results_path / "tool-efficacy-scorecard.json"
+    if not scorecard_path.exists():
+        typer.echo(
+            f"export-data: tool-efficacy-scorecard.json not found in {results_path}. "
+            "Run 'task report' first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    scorecard = json.loads(scorecard_path.read_text(encoding="utf-8"))
+
+    # Build per-family metadata from task YAMLs
+    tasks_path = Path(tasks_dir)
+    family_meta: dict[str, dict] = {}
+    for task_file in sorted(tasks_path.glob("*.yaml")):
+        try:
+            raw = _load_yaml_manifest(task_file)
+        except Exception as exc:  # noqa: BLE001
+            typer.echo(f"export-data: skipping {task_file} ({exc})", err=True)
+            continue
+        family = raw.get("family")
+        if not family or family in family_meta:
+            continue  # keep first task per family
+        ti = raw.get("tool_invocation") or {}
+        tool_id = ti.get("tool_id", family)
+        args = ti.get("args") or []
+        sample_command = f"{tool_id} {' '.join(str(a) for a in args)}".strip()
+        objective = (raw.get("objective") or "").strip().replace("\n", " ")
+        # Use first sentence as use_case
+        use_case = objective.split(".")[0].strip() if objective else ""
+        family_meta[family] = {
+            "use_case": use_case,
+            "sample_command": sample_command,
+        }
+
+    tools = []
+    for entry in scorecard.get("families", []):
+        family = entry["family"]
+        tv = entry.get("tool_variant", {})
+        avg_raw = tv.get("avg_raw_tokens")
+        avg_reduced = tv.get("avg_reduced_tokens")
+        if avg_raw is None or avg_raw == 0:
+            continue
+        reduction_pct = round((1.0 - avg_reduced / avg_raw) * 100, 1)
+        meta = family_meta.get(family, {})
+        tools.append(
+            {
+                "family": family,
+                "use_case": meta.get("use_case", ""),
+                "sample_command": meta.get("sample_command", ""),
+                "avg_raw_tokens": round(avg_raw),
+                "avg_reduced_tokens": round(avg_reduced),
+                "reduction_pct": reduction_pct,
+                "deterministic_pass_rate": tv.get("deterministic_pass_rate"),
+            }
+        )
+
+    tools.sort(key=lambda t: t["reduction_pct"], reverse=True)
+
+    import datetime
+
+    payload = {
+        "generated_at": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
+        "repo_commit": scorecard.get("repo_commit", "unknown"),
+        "tools": tools,
+    }
+
+    out_path = Path(output_path) if output_path else results_path / "benchmark-data.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    typer.echo(f"export-data: wrote {len(tools)} tool entries to {out_path}")
+
+
 @app.command()
 def validate_schemas(
     tasks_dir: str = typer.Option(
