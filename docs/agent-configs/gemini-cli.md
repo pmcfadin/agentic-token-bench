@@ -43,6 +43,38 @@ gemini -p "<prompt>" --output-format stream-json
 
 ---
 
+## Tool setup
+
+### qmd — index your codebase first
+
+`qmd get` serves line ranges from a named collection. Register your project and build the index before invoking Gemini on tasks that use qmd:
+
+```bash
+# Add your project (once per codebase)
+qmd collection add /path/to/your/project --name my-project
+
+# Build the index
+qmd update
+
+# Verify
+qmd collection list
+```
+
+Rerun `qmd update` after large file changes. The index lives at `~/.cache/qmd/index.sqlite`.
+
+### rtk — explicit use only
+
+Gemini CLI does not have a hook system like Claude Code. Use rtk commands explicitly within your prompts:
+
+```bash
+rtk ls src/
+rtk git status
+```
+
+The other tools (ripgrep, ast-grep, comby, fastmod) need only be on `PATH`.
+
+---
+
 ## Token count extraction
 
 ### Primary path: result line

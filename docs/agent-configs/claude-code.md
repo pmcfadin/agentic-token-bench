@@ -30,6 +30,68 @@ Then paste any of the sections below.
 
 ---
 
+## Tool setup
+
+Some tools need one-time or per-project setup before Claude Code can use them.
+
+### qmd — index your codebase first
+
+`qmd get` looks up line ranges from a named collection. You must register your project and build the index before any `qmd get` calls will work:
+
+```bash
+# Add your project as a named collection (once per codebase)
+qmd collection add /path/to/your/project --name my-project
+
+# Build the index
+qmd update
+
+# Verify
+qmd collection list
+```
+
+The index lives in `~/.cache/qmd/index.sqlite`. Rerun `qmd update` after large file changes. To restrict indexing to specific file types:
+
+```bash
+sqlite3 ~/.cache/qmd/index.sqlite \
+  "UPDATE store_collections SET pattern='**/*.{java,ts,py}' WHERE name='my-project';"
+qmd update
+```
+
+### rtk — configure the Claude Code hook
+
+rtk works transparently in Claude Code via a `PreToolUse` hook that intercepts Bash calls and rewrites them through rtk automatically. Without the hook, you'd call `rtk <cmd>` explicitly every time.
+
+Add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "rtk hook"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+After adding the hook, `git status` becomes `rtk git status` automatically — no prompt or CLAUDE.md changes needed. Verify with:
+
+```bash
+rtk gain          # should show token savings accumulating
+rtk gain --history
+```
+
+The other four tools (ripgrep, ast-grep, comby, fastmod) need only be on `PATH` — no additional setup required.
+
+---
+
 ## qmd
 
 **Usage**: Retrieve an exact passage from a source file by line range (99.2% token reduction).

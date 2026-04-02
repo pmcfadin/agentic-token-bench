@@ -41,6 +41,39 @@ codex exec --full-auto --json --ephemeral --skip-git-repo-check -p "<prompt>"
 
 ---
 
+## Tool setup
+
+### qmd — index your codebase first
+
+`qmd get` serves line ranges from a named collection. Register your project and build the index before invoking Codex on tasks that use qmd:
+
+```bash
+# Add your project (once per codebase)
+qmd collection add /path/to/your/project --name my-project
+
+# Build the index
+qmd update
+
+# Verify
+qmd collection list
+```
+
+Rerun `qmd update` after large file changes. The index lives at `~/.cache/qmd/index.sqlite`.
+
+### rtk — explicit use only
+
+Codex does not have a hook system like Claude Code. Use rtk commands explicitly in your prompts or system prompt. rtk will still compress output, but it won't intercept commands transparently:
+
+```bash
+# Explicit usage in a Codex task
+rtk ls src/
+rtk git status
+```
+
+The other tools (ripgrep, ast-grep, comby, fastmod) need only be on `PATH`.
+
+---
+
 ## Putting tools on PATH
 
 Codex resolves binaries from `PATH` at the time of invocation. The simplest approach:
