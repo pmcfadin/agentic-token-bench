@@ -45,6 +45,75 @@ The LLM sees a list of file paths instead of every file's content. Same answer, 
 | [`docs/integration-guide.md`](docs/integration-guide.md) | All 6 tools: use cases, copy-paste commands, Claude Code / Codex / Gemini CLI setup |
 | [`docs/agent-configs/`](docs/agent-configs/) | Paste-ready CLAUDE.md snippets, Codex PATH config, Gemini stream-json extraction |
 | [`docs/agent-configs/README.md`](docs/agent-configs/README.md) | Quick-start and tool selection guide |
+| [`docs/agent-internals/`](docs/agent-internals/) | Verified agent internals for Claude Code, Codex, and Gemini CLI |
+| [`docs/tokenmax-install-spec.md`](docs/tokenmax-install-spec.md) | Installer contract and command behavior for `tokenmax` |
+
+---
+
+## Tokenmax Installer
+
+`tokenmax` is the user-facing installer for wiring these tools into Claude Code, Codex, and Gemini CLI without hand-editing each config surface.
+
+### Run it from this repo
+
+The CLI lives in this repository today. From the repo root:
+
+```bash
+npm install
+node bin/tokenmax.js doctor
+node bin/tokenmax.js install all
+```
+
+You can also make the local executable available on your shell `PATH`:
+
+```bash
+npm link
+tokenmax doctor
+tokenmax install all
+```
+
+### Bootstrap scripts
+
+This repo also ships thin bootstrap scripts for the future published package flow:
+
+```bash
+scripts/tokenmax/install.sh
+scripts/tokenmax/install.ps1
+```
+
+Their job is intentionally small: verify `node` and `npm`, install `tokenmax`, print the version, and optionally run `tokenmax install all --yes`.
+
+### Supported commands
+
+```bash
+tokenmax doctor
+tokenmax status
+tokenmax install all
+tokenmax install claude
+tokenmax install codex
+tokenmax install gemini
+tokenmax repair all
+tokenmax uninstall all
+```
+
+Supported flags in v1:
+
+```bash
+--json
+--yes
+--dry-run
+--force
+```
+
+### What `tokenmax install all` changes
+
+`tokenmax` is configure-only in v1. It does **not** install `qmd`, `rtk`, `rg`, `ast-grep`, `comby`, or `fastmod`. It probes for those tools on `PATH`, warns on anything missing, and writes only the documented agent config that applies.
+
+- Claude Code: manages a Tokenmax block in `~/.claude/CLAUDE.md`, generates `~/.claude/commands/tokenmax.md`, and writes the documented `rtk` hook to `~/.claude/settings.json` only when `rtk` is installed.
+- Codex: manages a Tokenmax block in `~/.codex/AGENTS.md` and generates `~/.codex/skills/tokenmax/SKILL.md`.
+- Gemini CLI: manages a Tokenmax block in `~/.gemini/GEMINI.md` and generates `~/.gemini/commands/tokenmax.toml`.
+
+All managed edits are reversible. Tokenmax records state, backups, and manifests under `~/.tokenmax/`, and `tokenmax status` reports drift from the last successful install.
 
 ---
 
