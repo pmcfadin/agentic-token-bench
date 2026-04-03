@@ -1,0 +1,15 @@
+{
+  "name": "tokenmax",
+  "version": "0.1.0",
+  "description": "Installer and maintenance CLI for token-saving agent tooling.",
+  "bin": {
+    "tokenmax": "bin/tokenmax.js"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test test/tokenmax/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

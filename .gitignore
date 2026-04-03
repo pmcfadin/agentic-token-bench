@@ -31,3 +31,5 @@ benchmarks/results/
 benchmarks/repos/cassandra/checkout/
 *.log
 .cache/
+node_modules/
+npm-debug.log*
