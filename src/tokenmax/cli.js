@@ -36,10 +36,10 @@ async function runCli(argv, env = process.env) {
       output = { ok: true, version: VERSION, text: VERSION };
       break;
     case "doctor":
-      output = doctor(command.target, env);
+      output = doctor(command.target, env, command.flags);
       break;
     case "status":
-      output = status(env);
+      output = status(env, command.flags);
       break;
     case "install":
     case "repair":

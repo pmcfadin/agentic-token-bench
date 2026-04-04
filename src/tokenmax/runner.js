@@ -52,7 +52,7 @@ function summarizeToolWarnings(tools) {
   return warnings;
 }
 
-function doctor(target, env = process.env) {
+function doctor(target, env = process.env, flags = {}) {
   const probes = gatherProbes(env);
   const selected = selectedAgents(target);
   const warnings = summarizeToolWarnings(probes.tools);
@@ -68,6 +68,9 @@ function doctor(target, env = process.env) {
     ok: true,
     version: VERSION,
     action: "doctor",
+    target,
+    mode: flags.mode || "stable",
+    scope: flags.scope || "user",
     platform: probes.platform,
     agents: agentResults,
     tools: probes.tools,
@@ -182,6 +185,9 @@ function performInstallLike(action, target, flags, env = process.env) {
         ok: false,
         version: VERSION,
         action,
+        target,
+        mode: flags.mode || "stable",
+        scope: flags.scope || "user",
         error: "No project root found (no .git directory in parent chain)",
         text: "Error: --scope project requires a git repository. No .git found.",
       };
@@ -257,6 +263,9 @@ function performInstallLike(action, target, flags, env = process.env) {
     ok: results.every((result) => ["installed", "repaired", "removed", "skipped", "dry-run"].includes(result.status)),
     version: VERSION,
     action,
+    target,
+    mode: flags.mode || "stable",
+    scope: flags.scope || "user",
     runId: state.runId,
     results,
     warnings: globalWarnings,
@@ -494,7 +503,7 @@ function extractClaudeHook(existingContent) {
   return match || {};
 }
 
-function status(env = process.env) {
+function status(env = process.env, flags = {}) {
   const probes = gatherProbes(env);
   const homeDir = probes.platform.homeDir;
   const current = loadCurrentState(homeDir);
@@ -505,6 +514,9 @@ function status(env = process.env) {
     ok: true,
     version: VERSION,
     action: "status",
+    target: "all",
+    mode: flags.mode || "stable",
+    scope: flags.scope || "user",
     current,
     drift: allDrift,
     warnings: summarizeToolWarnings(probes.tools),

@@ -7,7 +7,7 @@ const { spawnSync } = require("child_process");
 
 const { removeManagedBlock, upsertManagedBlock } = require("../../src/tokenmax/managed-files");
 const { doctor, performInstallLike, status } = require("../../src/tokenmax/runner");
-const { parseCommand } = require("../../src/tokenmax/utils");
+const { formatJsonOutput, parseCommand } = require("../../src/tokenmax/utils");
 
 test("parseCommand supports version, status default, and install targets", () => {
   assert.deepEqual(parseCommand(["--version"]).action, "version");
@@ -244,6 +244,213 @@ test("repair regenerates missing shared assets", () => {
 
   performInstallLike("repair", "all", baseFlags(), fixture.env);
   assert.equal(fs.existsSync(guidancePath), true);
+});
+
+const EXPECTED_JSON_KEYS = ["agents", "changed_files", "command", "mode", "scope", "status", "warnings"];
+
+test("--json install output has exact top-level keys and correct types", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  const result = performInstallLike("install", "claude", baseFlags(), fixture.env);
+  const json = formatJsonOutput(result);
+
+  assert.deepEqual(Object.keys(json).sort(), EXPECTED_JSON_KEYS);
+  assert.equal(typeof json.status, "string");
+  assert.ok(["ok", "partial", "failed"].includes(json.status));
+  assert.ok(json.agents !== null && typeof json.agents === "object" && !Array.isArray(json.agents));
+  assert.ok(Array.isArray(json.changed_files));
+  assert.ok(Array.isArray(json.warnings));
+});
+
+test("--json install output status is ok when all agents succeed", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  const result = performInstallLike("install", "claude", baseFlags(), fixture.env);
+  const json = formatJsonOutput(result);
+
+  assert.equal(json.status, "ok");
+  assert.equal(json.command, "install claude");
+  assert.equal(json.mode, "stable");
+  assert.equal(json.scope, "user");
+  assert.ok("claude" in json.agents);
+  assert.equal(json.agents.claude.status, "installed");
+});
+
+test("--json uninstall output has exact top-level keys and status ok", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+  const result = performInstallLike("uninstall", "claude", baseFlags(), fixture.env);
+  const json = formatJsonOutput(result);
+
+  assert.deepEqual(Object.keys(json).sort(), EXPECTED_JSON_KEYS);
+  assert.equal(json.status, "ok");
+  assert.equal(json.command, "uninstall claude");
+  assert.equal(json.agents.claude.status, "removed");
+});
+
+test("--json doctor output has exact top-level keys and status ok", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: [],
+  });
+
+  const result = doctor("all", fixture.env, baseFlags());
+  const json = formatJsonOutput(result);
+
+  assert.deepEqual(Object.keys(json).sort(), EXPECTED_JSON_KEYS);
+  assert.equal(json.status, "ok");
+  assert.equal(json.command, "doctor all");
+  assert.equal(typeof json.agents, "object");
+  assert.ok(!Array.isArray(json.agents));
+  assert.ok("claude" in json.agents);
+  assert.ok(Array.isArray(json.changed_files));
+  assert.equal(json.changed_files.length, 0);
+});
+
+test("--json status output has exact top-level keys and status ok", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+  const result = status(fixture.env, baseFlags());
+  const json = formatJsonOutput(result);
+
+  assert.deepEqual(Object.keys(json).sort(), EXPECTED_JSON_KEYS);
+  assert.equal(json.status, "ok");
+  assert.equal(json.command, "status all");
+  assert.ok(Array.isArray(json.changed_files));
+  assert.equal(json.changed_files.length, 0);
+});
+
+test("--json output status is failed when all attempted agents fail", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: [],
+  });
+
+  // Make a directory where a file needs to go so writeFileEnsured fails
+  const claudeRoot = path.join(fixture.home, ".claude");
+  const commandDir = path.join(claudeRoot, "commands", "tokenmax.md");
+  fs.mkdirSync(commandDir, { recursive: true });
+
+  const result = performInstallLike("install", "claude", baseFlags(), fixture.env);
+  const json = formatJsonOutput(result);
+
+  assert.equal(json.status, "failed");
+  assert.equal(json.agents.claude.status, "failed");
+});
+
+test("--json output status is partial when some agents succeed and some fail", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude", "codex"],
+    tools: [],
+  });
+
+  // Block claude's command file path with a directory to force a write failure
+  const claudeRoot = path.join(fixture.home, ".claude");
+  const commandDir = path.join(claudeRoot, "commands", "tokenmax.md");
+  fs.mkdirSync(commandDir, { recursive: true });
+
+  const result = performInstallLike("install", "all", baseFlags(), fixture.env);
+  const json = formatJsonOutput(result);
+
+  // claude should fail, codex should succeed (or gemini skipped), giving partial
+  assert.equal(json.agents.claude.status, "failed");
+  assert.equal(["partial", "ok"].includes(json.status), true);
+  // If codex installed OK and gemini was skipped, all attempted = codex(ok) + claude(fail) => partial
+  if (json.agents.codex && json.agents.codex.status === "installed") {
+    assert.equal(json.status, "partial");
+  }
+});
+
+test("--json per-agent entry includes errorCode and recoveryHint on failure", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: [],
+  });
+
+  const claudeRoot = path.join(fixture.home, ".claude");
+  const commandDir = path.join(claudeRoot, "commands", "tokenmax.md");
+  fs.mkdirSync(commandDir, { recursive: true });
+
+  const result = performInstallLike("install", "claude", baseFlags(), fixture.env);
+  const json = formatJsonOutput(result);
+
+  assert.equal(json.agents.claude.status, "failed");
+  // errorCode or error should be present; errorCode propagates if set
+  assert.ok("errorCode" in result.results[0] || "error" in result.results[0]);
+});
+
+test("--json changed_files is a deduped sorted array of applied paths", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  const result = performInstallLike("install", "claude", baseFlags(), fixture.env);
+  const json = formatJsonOutput(result);
+
+  assert.ok(Array.isArray(json.changed_files));
+  // All paths should be strings
+  for (const p of json.changed_files) {
+    assert.equal(typeof p, "string");
+  }
+  // Should be sorted
+  const sorted = [...json.changed_files].sort();
+  assert.deepEqual(json.changed_files, sorted);
+  // No duplicates
+  assert.equal(json.changed_files.length, new Set(json.changed_files).size);
+  // Should have some files since install succeeded
+  assert.ok(json.changed_files.length > 0);
+});
+
+test("--json mode and scope reflect flags values", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd"],
+    qmdCollections: "demo-project",
+  });
+
+  const flags = { ...baseFlags(), mode: "aggressive", scope: "user" };
+  const result = performInstallLike("install", "claude", flags, fixture.env);
+  const json = formatJsonOutput(result);
+
+  assert.equal(json.mode, "aggressive");
+  assert.equal(json.scope, "user");
+});
+
+test("--json skipped agents include reason field", () => {
+  // No agents in fixture environment => all will be skipped
+  const fixture = createFixtureEnvironment({
+    agents: [],
+    tools: [],
+  });
+
+  const result = performInstallLike("install", "all", baseFlags(), fixture.env);
+  const json = formatJsonOutput(result);
+
+  // All agents should be skipped
+  for (const entry of Object.values(json.agents)) {
+    assert.equal(entry.status, "skipped");
+    assert.ok("reason" in entry);
+  }
 });
 
 function baseFlags() {

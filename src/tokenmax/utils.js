@@ -162,9 +162,91 @@ function parseCommand(argv) {
   throw new Error(`Unsupported command: ${argv.join(" ")}`);
 }
 
+function formatJsonOutput(result) {
+  const action = result.action || "unknown";
+  const target = result.target != null ? result.target : "all";
+  const command = `${action} ${target}`;
+  const mode = result.mode || "stable";
+  const scope = result.scope || "user";
+  const warnings = result.warnings || [];
+
+  // Build agents object
+  const agents = {};
+
+  if (action === "doctor") {
+    // result.agents is an array of { id, status, ... }
+    for (const entry of result.agents || []) {
+      const agentEntry = { status: entry.status };
+      if (entry.status === "missing" || entry.status === "skipped") {
+        agentEntry.reason = "not found";
+      }
+      agents[entry.id] = agentEntry;
+    }
+  } else if (action === "status") {
+    // result.current.results is an array of { agent, status, ... }
+    const currentResults = (result.current && result.current.results) || [];
+    for (const entry of currentResults) {
+      const agentEntry = { status: entry.status };
+      if (entry.reason) {
+        agentEntry.reason = entry.reason;
+      }
+      agents[entry.agent] = agentEntry;
+    }
+  } else {
+    // install / repair / uninstall — result.results is an array of { agent, status, ... }
+    for (const entry of result.results || []) {
+      const agentEntry = { status: entry.status };
+      if (entry.status === "skipped" || entry.status === "missing") {
+        agentEntry.reason = entry.reason || "not found";
+      }
+      if (entry.errorCode) {
+        agentEntry.errorCode = entry.errorCode;
+      }
+      if (entry.recoveryHint) {
+        agentEntry.recoveryHint = entry.recoveryHint;
+      }
+      agents[entry.agent] = agentEntry;
+    }
+  }
+
+  // Derive top-level status string
+  let statusStr;
+  if (action === "doctor" || action === "status") {
+    statusStr = "ok";
+  } else {
+    const agentValues = Object.values(agents);
+    const attempted = agentValues.filter((a) => a.status !== "skipped" && a.status !== "dry-run");
+    if (attempted.length === 0) {
+      statusStr = "ok";
+    } else {
+      const failed = attempted.filter((a) => a.status === "failed");
+      if (failed.length === 0) {
+        statusStr = "ok";
+      } else if (failed.length === attempted.length) {
+        statusStr = "failed";
+      } else {
+        statusStr = "partial";
+      }
+    }
+  }
+
+  // Build changed_files: paths from applied changes, deduped, sorted
+  const changedSet = new Set();
+  for (const entry of result.results || []) {
+    for (const change of entry.changes || []) {
+      if (change.applied === true) {
+        changedSet.add(change.path);
+      }
+    }
+  }
+  const changed_files = Array.from(changedSet).sort();
+
+  return { command, status: statusStr, mode, scope, agents, changed_files, warnings };
+}
+
 function printOutput(output, useJson) {
   if (useJson) {
-    process.stdout.write(`${stableStringify(output)}\n`);
+    process.stdout.write(`${stableStringify(formatJsonOutput(output))}\n`);
     return;
   }
 
@@ -179,6 +261,7 @@ function printOutput(output, useJson) {
 module.exports = {
   ensureDir,
   fileExists,
+  formatJsonOutput,
   getHomeDir,
   getPlatform,
   hashContent,
