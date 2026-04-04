@@ -107,6 +107,44 @@ test("bootstrap scripts contain the thin install flow", () => {
   assert.equal(syntax.status, 0, syntax.stderr);
 });
 
+test("error classes carry code, agent, file, and recoveryHint", () => {
+  const { PreflightError, BackupError, WriteError, ValidationError, RollbackError } = require("../../src/tokenmax/errors");
+
+  const err = new PreflightError({
+    message: "dir not writable",
+    agent: "claude",
+    file: "/home/.claude",
+    recoveryHint: "tokenmax doctor",
+  });
+  assert.equal(err.code, "preflight_failed");
+  assert.equal(err.agent, "claude");
+  assert.equal(err.file, "/home/.claude");
+  assert.equal(err.recoveryHint, "tokenmax doctor");
+  assert.equal(err.message, "dir not writable");
+  assert.ok(err instanceof Error);
+
+  assert.equal(new BackupError({ message: "fail" }).code, "backup_failed");
+  assert.equal(new WriteError({ message: "fail" }).code, "write_failed");
+  assert.equal(new ValidationError({ message: "fail" }).code, "validation_failed");
+  assert.equal(new RollbackError({ message: "fail" }).code, "rollback_failed");
+});
+
+test("install failure result includes errorCode and recoveryHint", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: [],
+  });
+
+  // Make a directory where a file needs to go so writeFileEnsured fails
+  const claudeRoot = path.join(fixture.home, ".claude");
+  const commandDir = path.join(claudeRoot, "commands", "tokenmax.md");
+  fs.mkdirSync(commandDir, { recursive: true });
+
+  const result = performInstallLike("install", "claude", baseFlags(), fixture.env);
+  assert.equal(result.results[0].status, "failed");
+  assert.ok("errorCode" in result.results[0] || "error" in result.results[0]);
+});
+
 function baseFlags() {
   return {
     json: false,

@@ -3,6 +3,7 @@ const { AGENT_IDS, VERSION } = require("./constants");
 const { claudeAdapter, CLAUDE_HOOK } = require("./agents/claude");
 const { codexAdapter } = require("./agents/codex");
 const { geminiAdapter } = require("./agents/gemini");
+const { BackupError, RollbackError, ValidationError, WriteError } = require("./errors");
 const { extractManagedBlock, removeManagedBlock, upsertManagedBlock } = require("./managed-files");
 const { probeAgents, probeTools, ensureWritableConfigRoot } = require("./probe");
 const { captureChangeRecord, initializeState, loadCurrentState, makeManifest, recordBackup, saveManifest } = require("./state");
@@ -185,7 +186,17 @@ function applyInstall(action, adapter, agent, changes, state, flags) {
       }
 
       const existing = readFileIfExists(change.path);
-      const backupPath = recordBackup(state.backupRoot, change.path, existing);
+      let backupPath;
+      try {
+        backupPath = recordBackup(state.backupRoot, change.path, existing);
+      } catch (err) {
+        throw new BackupError({
+          message: err.message,
+          agent: agent.id,
+          file: change.path,
+          recoveryHint: null,
+        });
+      }
       rollbackStack.push({ path: change.path, hadExisting: existing != null, backupPath });
 
       let nextContent;
@@ -199,7 +210,16 @@ function applyInstall(action, adapter, agent, changes, state, flags) {
         throw new Error(`Unsupported change ownership: ${change.ownership}`);
       }
 
-      writeFileEnsured(change.path, nextContent);
+      try {
+        writeFileEnsured(change.path, nextContent);
+      } catch (err) {
+        throw new WriteError({
+          message: err.message,
+          agent: agent.id,
+          file: change.path,
+          recoveryHint: null,
+        });
+      }
       appliedChanges.push({
         ...captureChangeRecord(change, nextContent, backupPath, "ok"),
         applied: true,
@@ -216,7 +236,12 @@ function applyInstall(action, adapter, agent, changes, state, flags) {
 
     const validation = adapter.validate(appliedChanges);
     if (validation.length > 0) {
-      throw new Error(validation.join("; "));
+      throw new ValidationError({
+        message: validation.join("; "),
+        agent: agent.id,
+        file: null,
+        recoveryHint: null,
+      });
     }
 
     return {
@@ -232,6 +257,8 @@ function applyInstall(action, adapter, agent, changes, state, flags) {
       agent: agent.id,
       status: "failed",
       error: error.message,
+      errorCode: error.code || null,
+      recoveryHint: error.recoveryHint || null,
       changes: appliedChanges,
     };
   }
@@ -297,11 +324,20 @@ function applyUninstall(adapter, agent, changes, state, flags) {
 function rollbackChanges(rollbackStack) {
   for (let index = rollbackStack.length - 1; index >= 0; index -= 1) {
     const item = rollbackStack[index];
-    const backupContent = fs.readFileSync(item.backupPath, "utf8");
-    if (item.hadExisting) {
-      writeFileEnsured(item.path, backupContent);
-    } else {
-      removeFileIfExists(item.path);
+    try {
+      const backupContent = fs.readFileSync(item.backupPath, "utf8");
+      if (item.hadExisting) {
+        writeFileEnsured(item.path, backupContent);
+      } else {
+        removeFileIfExists(item.path);
+      }
+    } catch (err) {
+      throw new RollbackError({
+        message: `Rollback failed for ${item.path}: ${err.message}`,
+        agent: null,
+        file: item.path,
+        recoveryHint: `Manually restore from backup: ${item.backupPath}`,
+      });
     }
   }
 }
