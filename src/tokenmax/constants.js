@@ -19,6 +19,8 @@ const MANIFESTS_DIR = "manifests";
 const BACKUPS_DIR = "backups";
 const LOGS_DIR = "logs";
 const ASSETS_DIR = "assets";
+const VALID_SCOPES = ["user", "project"];
+const VALID_MODES = ["stable", "aggressive"];
 
 const TOOL_CAPABILITIES = {
   qmd: {
@@ -87,6 +89,8 @@ module.exports = {
   TOOL_CAPABILITIES,
   TOOL_IDS,
   TOOL_LABELS,
+  VALID_MODES,
+  VALID_SCOPES,
   VERSION,
   statePaths,
 };

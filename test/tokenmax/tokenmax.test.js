@@ -192,8 +192,8 @@ test("install creates shared assets and uninstall removes them", () => {
     qmdCollections: "demo-project",
   });
 
-  const install = performInstallLike("install", "claude", baseFlags(), fixture.env);
-  assert.equal(install.results[0].status, "installed");
+  const install = performInstallLike("install", "all", baseFlags(), fixture.env);
+  assert.equal(install.results.find((r) => r.agent === "claude").status, "installed");
 
   const assetsDir = path.join(fixture.home, ".tokenmax", "assets");
   const guidancePath = path.join(assetsDir, "tool-guidance.md");
@@ -205,8 +205,8 @@ test("install creates shared assets and uninstall removes them", () => {
   assert.equal(install.manifest.sharedAssets.length, 1);
   assert.equal(install.manifest.sharedAssets[0].path, guidancePath);
 
-  const uninstall = performInstallLike("uninstall", "claude", baseFlags(), fixture.env);
-  assert.equal(uninstall.results[0].status, "removed");
+  const uninstall = performInstallLike("uninstall", "all", baseFlags(), fixture.env);
+  assert.equal(uninstall.results.find((r) => r.agent === "claude").status, "removed");
   assert.equal(fs.existsSync(guidancePath), false);
 });
 
@@ -217,7 +217,7 @@ test("status reports shared asset drift", () => {
     qmdCollections: "demo-project",
   });
 
-  performInstallLike("install", "claude", baseFlags(), fixture.env);
+  performInstallLike("install", "all", baseFlags(), fixture.env);
 
   const assetsDir = path.join(fixture.home, ".tokenmax", "assets");
   const guidancePath = path.join(assetsDir, "tool-guidance.md");
@@ -236,13 +236,13 @@ test("repair regenerates missing shared assets", () => {
     qmdCollections: "demo-project",
   });
 
-  performInstallLike("install", "claude", baseFlags(), fixture.env);
+  performInstallLike("install", "all", baseFlags(), fixture.env);
 
   const guidancePath = path.join(fixture.home, ".tokenmax", "assets", "tool-guidance.md");
   fs.rmSync(guidancePath, { force: true });
   assert.equal(fs.existsSync(guidancePath), false);
 
-  performInstallLike("repair", "claude", baseFlags(), fixture.env);
+  performInstallLike("repair", "all", baseFlags(), fixture.env);
   assert.equal(fs.existsSync(guidancePath), true);
 });
 
@@ -252,6 +252,8 @@ function baseFlags() {
     yes: false,
     dryRun: false,
     force: false,
+    scope: "user",
+    mode: "stable",
   };
 }
 

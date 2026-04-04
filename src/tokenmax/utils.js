@@ -75,7 +75,23 @@ function sortValue(value) {
   return value;
 }
 
+function parseValueFlag(argv, i, name, validValues) {
+  const arg = argv[i];
+  let value;
+  if (arg.includes("=")) {
+    value = arg.split("=")[1];
+  } else {
+    i++;
+    value = argv[i];
+  }
+  if (!validValues.includes(value)) {
+    throw new Error(`Invalid --${name} value: ${value}. Must be one of: ${validValues.join(", ")}`);
+  }
+  return { value, nextIndex: i };
+}
+
 function parseArgs(argv) {
+  const { VALID_SCOPES, VALID_MODES } = require("./constants");
   const positionals = [];
   const flags = {
     json: false,
@@ -84,12 +100,9 @@ function parseArgs(argv) {
     force: false,
     help: false,
     version: false,
-    scope: "user",
-    mode: "stable",
+    scope: VALID_SCOPES[0],
+    mode: VALID_MODES[0],
   };
-
-  const validScopes = ["user", "project"];
-  const validModes = ["stable", "aggressive"];
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -110,29 +123,11 @@ function parseArgs(argv) {
     } else if (arg === "--version" || arg === "-v") {
       flags.version = true;
     } else if (arg.startsWith("--scope")) {
-      let value;
-      if (arg.includes("=")) {
-        value = arg.split("=")[1];
-      } else {
-        i++;
-        value = argv[i];
-      }
-      if (!validScopes.includes(value)) {
-        throw new Error(`Invalid --scope value: ${value}. Must be one of: ${validScopes.join(", ")}`);
-      }
-      flags.scope = value;
+      const result = parseValueFlag(argv, i, "scope", VALID_SCOPES);
+      flags.scope = result.value; i = result.nextIndex;
     } else if (arg.startsWith("--mode")) {
-      let value;
-      if (arg.includes("=")) {
-        value = arg.split("=")[1];
-      } else {
-        i++;
-        value = argv[i];
-      }
-      if (!validModes.includes(value)) {
-        throw new Error(`Invalid --mode value: ${value}. Must be one of: ${validModes.join(", ")}`);
-      }
-      flags.mode = value;
+      const result = parseValueFlag(argv, i, "mode", VALID_MODES);
+      flags.mode = result.value; i = result.nextIndex;
     } else {
       throw new Error(`Unknown flag: ${arg}`);
     }

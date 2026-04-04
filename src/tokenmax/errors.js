@@ -1,56 +1,32 @@
-class PreflightError extends Error {
-  constructor({ message, agent = null, file = null, recoveryHint = null } = {}) {
+class TokenmaxError extends Error {
+  constructor({ message, code, agent = null, file = null, recoveryHint = null } = {}) {
     super(message);
-    this.name = "PreflightError";
-    this.code = "preflight_failed";
+    this.name = this.constructor.name;
+    this.code = code;
     this.agent = agent;
     this.file = file;
     this.recoveryHint = recoveryHint;
   }
 }
 
-class BackupError extends Error {
-  constructor({ message, agent = null, file = null, recoveryHint = null } = {}) {
-    super(message);
-    this.name = "BackupError";
-    this.code = "backup_failed";
-    this.agent = agent;
-    this.file = file;
-    this.recoveryHint = recoveryHint;
-  }
+class PreflightError extends TokenmaxError {
+  constructor(opts) { super({ ...opts, code: "preflight_failed" }); }
 }
 
-class WriteError extends Error {
-  constructor({ message, agent = null, file = null, recoveryHint = null } = {}) {
-    super(message);
-    this.name = "WriteError";
-    this.code = "write_failed";
-    this.agent = agent;
-    this.file = file;
-    this.recoveryHint = recoveryHint;
-  }
+class BackupError extends TokenmaxError {
+  constructor(opts) { super({ ...opts, code: "backup_failed" }); }
 }
 
-class ValidationError extends Error {
-  constructor({ message, agent = null, file = null, recoveryHint = null } = {}) {
-    super(message);
-    this.name = "ValidationError";
-    this.code = "validation_failed";
-    this.agent = agent;
-    this.file = file;
-    this.recoveryHint = recoveryHint;
-  }
+class WriteError extends TokenmaxError {
+  constructor(opts) { super({ ...opts, code: "write_failed" }); }
 }
 
-class RollbackError extends Error {
-  constructor({ message, agent = null, file = null, recoveryHint = null } = {}) {
-    super(message);
-    this.name = "RollbackError";
-    this.code = "rollback_failed";
-    this.agent = agent;
-    this.file = file;
-    this.recoveryHint = recoveryHint;
-  }
+class ValidationError extends TokenmaxError {
+  constructor(opts) { super({ ...opts, code: "validation_failed" }); }
 }
 
-module.exports = { PreflightError, BackupError, WriteError, ValidationError, RollbackError };
+class RollbackError extends TokenmaxError {
+  constructor(opts) { super({ ...opts, code: "rollback_failed" }); }
+}
+
+module.exports = { TokenmaxError, PreflightError, BackupError, WriteError, ValidationError, RollbackError };

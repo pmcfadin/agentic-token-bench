@@ -101,12 +101,10 @@ function renderDoctorText(probes, selected, warnings) {
 }
 
 function installSharedAssets(state, probes, flags) {
-  const paths = statePaths(probes.platform.homeDir);
-  const assetsDir = paths.assetsDir;
+  const guidancePath = path.join(state.assetsDir, "tool-guidance.md");
   const sharedAssets = [];
 
   if (flags.dryRun) {
-    const guidancePath = path.join(assetsDir, "tool-guidance.md");
     sharedAssets.push({
       path: guidancePath,
       ownership: "generated",
@@ -116,35 +114,30 @@ function installSharedAssets(state, probes, flags) {
     return sharedAssets;
   }
 
-  ensureDir(assetsDir);
+  ensureDir(state.assetsDir);
 
-  const guidanceContent = renderToolGuidance(probes.tools);
-  const guidancePath = path.join(assetsDir, "tool-guidance.md");
-
+  const content = renderToolGuidance(probes.tools) + "\n";
   const existing = readFileIfExists(guidancePath);
   if (state.backupRoot) {
     recordBackup(state.backupRoot, guidancePath, existing);
   }
 
-  writeFileEnsured(guidancePath, guidanceContent + "\n");
+  writeFileEnsured(guidancePath, content);
 
   sharedAssets.push({
     path: guidancePath,
     ownership: "generated",
-    contentHash: hashContent(guidanceContent + "\n"),
+    contentHash: hashContent(content),
     applied: true,
   });
 
   return sharedAssets;
 }
 
-function removeSharedAssets(state, probes, flags) {
-  const paths = statePaths(probes.platform.homeDir);
-  const assetsDir = paths.assetsDir;
-  const guidancePath = path.join(assetsDir, "tool-guidance.md");
-
+function removeSharedAssets(state, flags) {
   if (flags.dryRun) return;
 
+  const guidancePath = path.join(state.assetsDir, "tool-guidance.md");
   const existing = readFileIfExists(guidancePath);
   if (existing != null && state.backupRoot) {
     recordBackup(state.backupRoot, guidancePath, existing);
@@ -176,6 +169,7 @@ function performInstallLike(action, target, flags, env = process.env) {
     ? {
         runId: "dry-run",
         backupRoot: null,
+        assetsDir: statePaths(homeDir).assetsDir,
       }
     : initializeState(homeDir);
   const results = [];
@@ -201,11 +195,15 @@ function performInstallLike(action, target, flags, env = process.env) {
     }
   }
 
+  // Shared assets are managed only on "all" targets to avoid breaking other
+  // agents' references when uninstalling a single agent.
   let sharedAssets = [];
-  if (action === "uninstall") {
-    removeSharedAssets(state, probes, flags);
-  } else {
-    sharedAssets = installSharedAssets(state, probes, flags);
+  if (target === "all") {
+    if (action === "uninstall") {
+      removeSharedAssets(state, flags);
+    } else {
+      sharedAssets = installSharedAssets(state, probes, flags);
+    }
   }
 
   for (const id of ids) {
@@ -349,7 +347,21 @@ function applyInstall(action, adapter, agent, changes, state, flags) {
     };
   } catch (error) {
     if (!flags.force && !flags.dryRun) {
-      rollbackChanges(rollbackStack);
+      try {
+        rollbackChanges(rollbackStack);
+      } catch (rollbackErr) {
+        // Rollback failed — surface that, but preserve the original cause.
+        rollbackErr.cause = error;
+        return {
+          agent: agent.id,
+          status: "failed",
+          error: rollbackErr.message,
+          errorCode: rollbackErr.code || null,
+          recoveryHint: rollbackErr.recoveryHint || null,
+          originalError: error.message,
+          changes: appliedChanges,
+        };
+      }
     }
     return {
       agent: agent.id,
