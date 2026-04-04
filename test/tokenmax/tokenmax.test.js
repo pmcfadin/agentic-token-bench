@@ -549,6 +549,126 @@ test("status text indicates backups: enabled or disabled from manifest", () => {
   assert.match(st2.text, /Backups: enabled/);
 });
 
+// ---------------------------------------------------------------------------
+// Preflight tests
+// ---------------------------------------------------------------------------
+
+test("preflight passes on a normal writable fixture", () => {
+  const { runPreflight, assertPreflight } = require("../../src/tokenmax/preflight");
+  const fixture = createFixtureEnvironment({ agents: ["claude"], tools: ["rtk"] });
+
+  // Simulate what runner does: gather probes, then run preflight
+  const { doctor: doctorFn } = require("../../src/tokenmax/runner");
+  const result = doctorFn("claude", fixture.env, baseFlags());
+
+  // preflight should be present and have no errors
+  assert.ok(result.preflight, "preflight result should be present on doctor output");
+  assert.equal(result.preflight.errors.length, 0, "should have no preflight errors on writable fixture");
+});
+
+test("preflight fails on read-only config root and install returns errorCode: preflight_failed", () => {
+  // Skip on CI environments that may ignore chmod (e.g. running as root)
+  if (process.getuid && process.getuid() === 0) {
+    return; // root bypasses permissions checks
+  }
+
+  const fixture = createFixtureEnvironment({ agents: ["claude"], tools: ["rtk"] });
+  const claudeRoot = path.join(fixture.home, ".claude");
+
+  // Create the directory so preflight can try to write into it
+  fs.mkdirSync(claudeRoot, { recursive: true });
+  // Make it read-only
+  fs.chmodSync(claudeRoot, 0o555);
+
+  try {
+    const result = performInstallLike("install", "claude", baseFlags(), fixture.env);
+    assert.equal(result.ok, false, "ok should be false when preflight fails");
+    assert.equal(result.errorCode, "preflight_failed", "errorCode should be preflight_failed");
+    assert.ok(Array.isArray(result.results) && result.results.length === 0, "no agent results when preflight fails early");
+    assert.ok(result.error, "error message should be present");
+  } finally {
+    // Restore permissions so cleanup works
+    fs.chmodSync(claudeRoot, 0o755);
+  }
+});
+
+test("preflight read-only result has status: failed in JSON output", () => {
+  if (process.getuid && process.getuid() === 0) {
+    return; // root bypasses permissions checks
+  }
+
+  const { formatJsonOutput } = require("../../src/tokenmax/utils");
+  const fixture = createFixtureEnvironment({ agents: ["claude"], tools: ["rtk"] });
+  const claudeRoot = path.join(fixture.home, ".claude");
+
+  fs.mkdirSync(claudeRoot, { recursive: true });
+  fs.chmodSync(claudeRoot, 0o555);
+
+  try {
+    const result = performInstallLike("install", "claude", baseFlags(), fixture.env);
+    const json = formatJsonOutput(result);
+    assert.equal(json.status, "failed", "JSON status should be failed when preflight fails");
+  } finally {
+    fs.chmodSync(claudeRoot, 0o755);
+  }
+});
+
+test("--force suppresses zero-helpers warning and install proceeds", () => {
+  const fixture = createFixtureEnvironment({ agents: ["claude"], tools: [] });
+
+  const result = performInstallLike("install", "claude", { ...baseFlags(), force: true }, fixture.env);
+  // Install should succeed (force suppresses warning, no hard errors)
+  assert.equal(result.ok, true, "install should succeed when --force is passed and only warnings exist");
+  assert.equal(result.results[0].status, "installed");
+});
+
+test("zero helper tools without --force produces warning but install still proceeds", () => {
+  const fixture = createFixtureEnvironment({ agents: ["claude"], tools: [] });
+
+  // Without --force, zero-helpers produces a warning but is NOT a hard error
+  const result = performInstallLike("install", "claude", baseFlags(), fixture.env);
+  // Install should still succeed (warnings don't block)
+  assert.equal(result.ok, true, "install should proceed even with zero-helpers warning");
+  assert.equal(result.results[0].status, "installed");
+
+  // The warning should appear in globalWarnings (from summarizeToolWarnings)
+  // The preflight warning is also present in checks (accessible via doctor)
+  const doctorResult = require("../../src/tokenmax/runner").doctor("claude", fixture.env, baseFlags());
+  const preflightWarning = doctorResult.preflight.warnings.find(
+    (w) => w.reason && w.reason.includes("helper tools")
+  );
+  assert.ok(preflightWarning, "preflight warning about zero helpers should appear in doctor output");
+});
+
+test("doctor reports preflight checks without throwing", () => {
+  const fixture = createFixtureEnvironment({ agents: ["claude"], tools: [] });
+
+  // Should not throw, even with read-only scenario
+  let result;
+  assert.doesNotThrow(() => {
+    result = require("../../src/tokenmax/runner").doctor("claude", fixture.env, baseFlags());
+  });
+  assert.ok(result.preflight, "doctor result should have preflight field");
+  assert.ok(Array.isArray(result.preflight.checks), "preflight.checks should be an array");
+  assert.ok(Array.isArray(result.preflight.errors), "preflight.errors should be an array");
+  assert.ok(Array.isArray(result.preflight.warnings), "preflight.warnings should be an array");
+});
+
+test("preflight: --dry-run still runs preflight checks without creating dirs", () => {
+  const fixture = createFixtureEnvironment({ agents: ["claude"], tools: ["rtk"] });
+  const claudeRoot = path.join(fixture.home, ".claude");
+
+  // Ensure the dir does NOT exist before dry-run
+  assert.equal(fs.existsSync(claudeRoot), false);
+
+  const result = performInstallLike("install", "claude", { ...baseFlags(), dryRun: true }, fixture.env);
+
+  // dry-run should still work (preflight passes for non-existent dirs)
+  assert.equal(result.results[0].status, "dry-run");
+  // dir should still not exist
+  assert.equal(fs.existsSync(claudeRoot), false);
+});
+
 function baseFlags() {
   return {
     json: false,

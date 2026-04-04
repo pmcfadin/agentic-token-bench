@@ -227,6 +227,9 @@ function formatJsonOutput(result) {
   let statusStr;
   if (action === "doctor" || action === "status") {
     statusStr = "ok";
+  } else if (result.ok === false && result.errorCode) {
+    // Hard failure before any agent processing (e.g. preflight_failed)
+    statusStr = "failed";
   } else {
     const agentValues = Object.values(agents);
     const attempted = agentValues.filter((a) => a.status !== "skipped" && a.status !== "dry-run");

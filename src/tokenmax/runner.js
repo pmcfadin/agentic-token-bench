@@ -4,7 +4,8 @@ const { AGENT_IDS, VERSION, statePaths } = require("./constants");
 const { claudeAdapter, CLAUDE_HOOK } = require("./agents/claude");
 const { codexAdapter } = require("./agents/codex");
 const { geminiAdapter } = require("./agents/gemini");
-const { BackupError, RollbackError, ValidationError, WriteError } = require("./errors");
+const { BackupError, PreflightError, RollbackError, ValidationError, WriteError } = require("./errors");
+const { runPreflight, assertPreflight } = require("./preflight");
 const { extractManagedBlock, removeManagedBlock, upsertManagedBlock } = require("./managed-files");
 const { probeAgents, probeTools, ensureWritableConfigRoot, findProjectRoot } = require("./probe");
 const { captureChangeRecord, initializeState, loadCurrentState, makeManifest, recordBackup, saveManifest } = require("./state");
@@ -55,6 +56,7 @@ function summarizeToolWarnings(tools) {
 function doctor(target, env = process.env, flags = {}) {
   const probes = gatherProbes(env);
   const selected = selectedAgents(target);
+  const adapterMap = adapters();
   const warnings = summarizeToolWarnings(probes.tools);
   const agentResults = selected.map((id) => ({
     id,
@@ -63,6 +65,10 @@ function doctor(target, env = process.env, flags = {}) {
     configRoot: probes.agents[id].configRoot,
     supportedSurfaces: probes.agents[id].supportedSurfaces,
   }));
+
+  // Run preflight in collect-and-report mode (never throws).
+  // Pass the original flags so warnings surface; doctor never calls assertPreflight.
+  const preflight = runPreflight(selected, adapterMap, probes, flags);
 
   return {
     ok: true,
@@ -75,11 +81,12 @@ function doctor(target, env = process.env, flags = {}) {
     agents: agentResults,
     tools: probes.tools,
     warnings,
-    text: renderDoctorText(probes, selected, warnings),
+    preflight,
+    text: renderDoctorText(probes, selected, warnings, preflight),
   };
 }
 
-function renderDoctorText(probes, selected, warnings) {
+function renderDoctorText(probes, selected, warnings, preflight) {
   const lines = [
     `tokenmax ${VERSION}`,
     `Platform: ${probes.platform.platform}/${probes.platform.arch}`,
@@ -98,6 +105,13 @@ function renderDoctorText(probes, selected, warnings) {
     lines.push("", "Warnings:");
     for (const warning of warnings) {
       lines.push(`- ${warning}`);
+    }
+  }
+  if (preflight && preflight.checks.length > 0) {
+    lines.push("", "Preflight:");
+    for (const check of preflight.checks) {
+      const loc = check.agent ? ` [${check.agent}]` : "";
+      lines.push(`- [${check.severity}]${loc} ${check.reason}`);
     }
   }
   return lines.join("\n");
@@ -168,6 +182,33 @@ function performInstallLike(action, target, flags, env = process.env) {
   const ids = selectedAgents(target);
   const adapterMap = adapters();
   const homeDir = probes.platform.homeDir;
+
+  // Phase 2: Preflight — run before any state initialization or writes.
+  // --dry-run still runs preflight; --force suppresses warnings but not hard errors.
+  try {
+    const preflightResult = runPreflight(ids, adapterMap, probes, flags);
+    assertPreflight(preflightResult);
+  } catch (err) {
+    if (err instanceof PreflightError) {
+      return {
+        ok: false,
+        version: VERSION,
+        action,
+        target,
+        mode: flags.mode || "stable",
+        scope: flags.scope || "user",
+        errorCode: err.code,
+        error: err.message,
+        recoveryHint: err.recoveryHint,
+        checks: err.checks || [],
+        results: [],
+        warnings: summarizeToolWarnings(probes.tools),
+        text: `Error: ${err.message}`,
+      };
+    }
+    throw err;
+  }
+
   const state = flags.dryRun
     ? {
         runId: "dry-run",
