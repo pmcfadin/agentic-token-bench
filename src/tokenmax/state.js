@@ -9,6 +9,7 @@ function initializeState(homeDir, now = new Date()) {
   ensureDir(paths.manifestsDir);
   ensureDir(paths.backupsDir);
   ensureDir(paths.logsDir);
+  ensureDir(paths.assetsDir);
 
   const runId = isoTimestamp(now);
   const backupRoot = path.join(paths.backupsDir, runId);
@@ -42,7 +43,7 @@ function saveManifest(homeDir, manifest) {
   return historyPath;
 }
 
-function makeManifest({ homeDir, runId, backupRoot, mode, probes, results }) {
+function makeManifest({ homeDir, runId, backupRoot, mode, probes, results, sharedAssets }) {
   return {
     version: VERSION,
     runId,
@@ -52,6 +53,7 @@ function makeManifest({ homeDir, runId, backupRoot, mode, probes, results }) {
     installedAt: new Date().toISOString(),
     probes,
     results,
+    sharedAssets: sharedAssets || [],
   };
 }
 

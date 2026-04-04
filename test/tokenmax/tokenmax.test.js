@@ -107,6 +107,67 @@ test("bootstrap scripts contain the thin install flow", () => {
   assert.equal(syntax.status, 0, syntax.stderr);
 });
 
+test("install creates shared assets and uninstall removes them", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  const install = performInstallLike("install", "claude", baseFlags(), fixture.env);
+  assert.equal(install.results[0].status, "installed");
+
+  const assetsDir = path.join(fixture.home, ".tokenmax", "assets");
+  const guidancePath = path.join(assetsDir, "tool-guidance.md");
+  assert.equal(fs.existsSync(guidancePath), true);
+  const content = fs.readFileSync(guidancePath, "utf8");
+  assert.match(content, /token-saving/i);
+
+  assert.ok(Array.isArray(install.manifest.sharedAssets));
+  assert.equal(install.manifest.sharedAssets.length, 1);
+  assert.equal(install.manifest.sharedAssets[0].path, guidancePath);
+
+  const uninstall = performInstallLike("uninstall", "claude", baseFlags(), fixture.env);
+  assert.equal(uninstall.results[0].status, "removed");
+  assert.equal(fs.existsSync(guidancePath), false);
+});
+
+test("status reports shared asset drift", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  const assetsDir = path.join(fixture.home, ".tokenmax", "assets");
+  const guidancePath = path.join(assetsDir, "tool-guidance.md");
+  fs.writeFileSync(guidancePath, "modified content\n", "utf8");
+
+  const currentStatus = status(fixture.env);
+  const assetDrift = currentStatus.drift.filter((d) => d.path === guidancePath);
+  assert.equal(assetDrift.length, 1);
+  assert.equal(assetDrift[0].reason, "content_changed");
+});
+
+test("repair regenerates missing shared assets", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  const guidancePath = path.join(fixture.home, ".tokenmax", "assets", "tool-guidance.md");
+  fs.rmSync(guidancePath, { force: true });
+  assert.equal(fs.existsSync(guidancePath), false);
+
+  performInstallLike("repair", "claude", baseFlags(), fixture.env);
+  assert.equal(fs.existsSync(guidancePath), true);
+});
+
 function baseFlags() {
   return {
     json: false,
