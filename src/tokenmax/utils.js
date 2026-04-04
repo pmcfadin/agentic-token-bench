@@ -102,6 +102,7 @@ function parseArgs(argv) {
     version: false,
     scope: VALID_SCOPES[0],
     mode: VALID_MODES[0],
+    backup: true,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -128,6 +129,19 @@ function parseArgs(argv) {
     } else if (arg.startsWith("--mode")) {
       const result = parseValueFlag(argv, i, "mode", VALID_MODES);
       flags.mode = result.value; i = result.nextIndex;
+    } else if (arg === "--backup") {
+      flags.backup = true;
+    } else if (arg === "--no-backup") {
+      flags.backup = false;
+    } else if (arg.startsWith("--backup=")) {
+      const val = arg.split("=")[1];
+      if (val === "false") {
+        flags.backup = false;
+      } else if (val === "true") {
+        flags.backup = true;
+      } else {
+        throw new Error(`Invalid --backup value: ${val}. Must be true or false`);
+      }
     } else {
       throw new Error(`Unknown flag: ${arg}`);
     }

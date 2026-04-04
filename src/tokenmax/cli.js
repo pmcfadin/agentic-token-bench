@@ -20,6 +20,7 @@ function helpText() {
     "  --force",
     "  --scope user|project",
     "  --mode stable|aggressive",
+    "  --backup / --no-backup",
     "  --help",
   ].join("\n");
 }

@@ -453,6 +453,102 @@ test("--json skipped agents include reason field", () => {
   }
 });
 
+test("parseArgs: --backup sets true, --no-backup sets false, default is true", () => {
+  const defaultCmd = parseCommand(["install", "all"]);
+  assert.equal(defaultCmd.flags.backup, true);
+
+  const withBackup = parseCommand(["install", "all", "--backup"]);
+  assert.equal(withBackup.flags.backup, true);
+
+  const noBackup = parseCommand(["install", "all", "--no-backup"]);
+  assert.equal(noBackup.flags.backup, false);
+
+  const backupFalse = parseCommand(["install", "all", "--backup=false"]);
+  assert.equal(backupFalse.flags.backup, false);
+
+  const backupTrue = parseCommand(["install", "all", "--backup=true"]);
+  assert.equal(backupTrue.flags.backup, true);
+});
+
+test("install with --no-backup completes and creates no backup directory", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  const result = performInstallLike("install", "claude", { ...baseFlags(), backup: false }, fixture.env);
+  assert.equal(result.results[0].status, "installed");
+
+  const backupDir = path.join(fixture.home, ".tokenmax", "backups");
+  assert.equal(fs.existsSync(backupDir), false);
+});
+
+test("manifest records backupsEnabled: false when install run with --no-backup", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  const result = performInstallLike("install", "claude", { ...baseFlags(), backup: false }, fixture.env);
+  assert.equal(result.manifest.backupsEnabled, false);
+});
+
+test("manifest records backupsEnabled: true when install run with default flags", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  const result = performInstallLike("install", "claude", baseFlags(), fixture.env);
+  assert.equal(result.manifest.backupsEnabled, true);
+});
+
+test("rollback after failure with --no-backup produces warning instead of crashing", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: [],
+  });
+
+  // Make a directory where a file needs to go so writeFileEnsured fails mid-apply
+  const claudeRoot = path.join(fixture.home, ".claude");
+  const commandDir = path.join(claudeRoot, "commands", "tokenmax.md");
+  fs.mkdirSync(commandDir, { recursive: true });
+
+  const result = performInstallLike("install", "claude", { ...baseFlags(), backup: false }, fixture.env);
+  assert.equal(result.results[0].status, "failed");
+
+  // Should have warnings about no backup available, not a crash
+  const agentResult = result.results[0];
+  const allWarnings = agentResult.warnings || [];
+  const hasNoBackupWarning = allWarnings.some((w) => w.includes("No backup available"));
+  assert.equal(hasNoBackupWarning, true, `Expected 'No backup available' warning, got: ${JSON.stringify(allWarnings)}`);
+});
+
+test("status text indicates backups: enabled or disabled from manifest", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", { ...baseFlags(), backup: false }, fixture.env);
+  const st = status(fixture.env);
+  assert.match(st.text, /Backups: disabled/);
+
+  // Now reinstall with backup enabled
+  const fixture2 = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+  performInstallLike("install", "claude", baseFlags(), fixture2.env);
+  const st2 = status(fixture2.env);
+  assert.match(st2.text, /Backups: enabled/);
+});
+
 function baseFlags() {
   return {
     json: false,
@@ -461,6 +557,7 @@ function baseFlags() {
     force: false,
     scope: "user",
     mode: "stable",
+    backup: true,
   };
 }
 

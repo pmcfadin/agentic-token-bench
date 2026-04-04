@@ -174,7 +174,7 @@ function performInstallLike(action, target, flags, env = process.env) {
         backupRoot: null,
         assetsDir: statePaths(homeDir).assetsDir,
       }
-    : initializeState(homeDir);
+    : initializeState(homeDir, new Date(), flags);
   const results = [];
   const globalWarnings = summarizeToolWarnings(probes.tools);
 
@@ -253,6 +253,7 @@ function performInstallLike(action, target, flags, env = process.env) {
     probes,
     results,
     sharedAssets,
+    backupsEnabled: flags.backup !== false,
   });
 
   if (!flags.dryRun && action !== "doctor") {
@@ -356,8 +357,9 @@ function applyInstall(action, adapter, agent, changes, state, flags) {
     };
   } catch (error) {
     if (!flags.force && !flags.dryRun) {
+      const rollbackWarnings = [];
       try {
-        rollbackChanges(rollbackStack);
+        rollbackChanges(rollbackStack, { warnings: rollbackWarnings });
       } catch (rollbackErr) {
         // Rollback failed — surface that, but preserve the original cause.
         rollbackErr.cause = error;
@@ -368,6 +370,18 @@ function applyInstall(action, adapter, agent, changes, state, flags) {
           errorCode: rollbackErr.code || null,
           recoveryHint: rollbackErr.recoveryHint || null,
           originalError: error.message,
+          warnings: rollbackWarnings.length > 0 ? rollbackWarnings : undefined,
+          changes: appliedChanges,
+        };
+      }
+      if (rollbackWarnings.length > 0) {
+        return {
+          agent: agent.id,
+          status: "failed",
+          error: error.message,
+          errorCode: error.code || null,
+          recoveryHint: error.recoveryHint || null,
+          warnings: rollbackWarnings,
           changes: appliedChanges,
         };
       }
@@ -440,9 +454,14 @@ function applyUninstall(adapter, agent, changes, state, flags) {
   };
 }
 
-function rollbackChanges(rollbackStack) {
+function rollbackChanges(rollbackStack, options = {}) {
+  const warnings = options.warnings || [];
   for (let index = rollbackStack.length - 1; index >= 0; index -= 1) {
     const item = rollbackStack[index];
+    if (item.backupPath == null) {
+      warnings.push(`No backup available for ${item.path}; manual recovery required`);
+      continue;
+    }
     try {
       const backupContent = fs.readFileSync(item.backupPath, "utf8");
       if (item.hadExisting) {
@@ -556,10 +575,12 @@ function renderStatusText(current, drift) {
   if (!current) {
     return "No tokenmax install state found.";
   }
+  const backupsLabel = current.backupsEnabled === false ? "disabled" : "enabled";
   const lines = [
     `tokenmax ${current.version}`,
     `Last run: ${current.runId}`,
     `Mode: ${current.mode}`,
+    `Backups: ${backupsLabel}`,
     "",
     "Agents:",
   ];

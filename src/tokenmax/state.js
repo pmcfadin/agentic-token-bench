@@ -3,17 +3,21 @@ const path = require("path");
 const { statePaths, VERSION } = require("./constants");
 const { ensureDir, hashContent, isoTimestamp, readFileIfExists, stableStringify, writeFileEnsured } = require("./utils");
 
-function initializeState(homeDir, now = new Date()) {
+function initializeState(homeDir, now = new Date(), flags = {}) {
   const paths = statePaths(homeDir);
   ensureDir(paths.root);
   ensureDir(paths.manifestsDir);
-  ensureDir(paths.backupsDir);
   ensureDir(paths.logsDir);
   ensureDir(paths.assetsDir);
 
   const runId = isoTimestamp(now);
-  const backupRoot = path.join(paths.backupsDir, runId);
-  ensureDir(backupRoot);
+
+  let backupRoot = null;
+  if (flags.backup !== false) {
+    ensureDir(paths.backupsDir);
+    backupRoot = path.join(paths.backupsDir, runId);
+    ensureDir(backupRoot);
+  }
 
   return { ...paths, runId, backupRoot };
 }
@@ -28,6 +32,9 @@ function loadCurrentState(homeDir) {
 }
 
 function recordBackup(backupRoot, filePath, content) {
+  if (backupRoot == null) {
+    return null;
+  }
   const safeName = filePath.replace(/[/:\\]/g, "__");
   const target = path.join(backupRoot, safeName);
   writeFileEnsured(target, content == null ? "" : content);
@@ -43,12 +50,13 @@ function saveManifest(homeDir, manifest) {
   return historyPath;
 }
 
-function makeManifest({ homeDir, runId, backupRoot, mode, probes, results, sharedAssets }) {
+function makeManifest({ homeDir, runId, backupRoot, mode, probes, results, sharedAssets, backupsEnabled }) {
   return {
     version: VERSION,
     runId,
     homeDir,
     backupRoot,
+    backupsEnabled: backupsEnabled !== false,
     mode,
     installedAt: new Date().toISOString(),
     probes,
