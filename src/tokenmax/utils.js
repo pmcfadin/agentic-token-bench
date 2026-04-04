@@ -84,10 +84,16 @@ function parseArgs(argv) {
     force: false,
     help: false,
     version: false,
+    scope: "user",
+    mode: "stable",
   };
 
-  for (const arg of argv) {
-    if (!arg.startsWith("--")) {
+  const validScopes = ["user", "project"];
+  const validModes = ["stable", "aggressive"];
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (!arg.startsWith("--") && arg !== "-v") {
       positionals.push(arg);
       continue;
     }
@@ -103,6 +109,30 @@ function parseArgs(argv) {
       flags.help = true;
     } else if (arg === "--version" || arg === "-v") {
       flags.version = true;
+    } else if (arg.startsWith("--scope")) {
+      let value;
+      if (arg.includes("=")) {
+        value = arg.split("=")[1];
+      } else {
+        i++;
+        value = argv[i];
+      }
+      if (!validScopes.includes(value)) {
+        throw new Error(`Invalid --scope value: ${value}. Must be one of: ${validScopes.join(", ")}`);
+      }
+      flags.scope = value;
+    } else if (arg.startsWith("--mode")) {
+      let value;
+      if (arg.includes("=")) {
+        value = arg.split("=")[1];
+      } else {
+        i++;
+        value = argv[i];
+      }
+      if (!validModes.includes(value)) {
+        throw new Error(`Invalid --mode value: ${value}. Must be one of: ${validModes.join(", ")}`);
+      }
+      flags.mode = value;
     } else {
       throw new Error(`Unknown flag: ${arg}`);
     }

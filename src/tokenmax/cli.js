@@ -18,6 +18,8 @@ function helpText() {
     "  --yes",
     "  --dry-run",
     "  --force",
+    "  --scope user|project",
+    "  --mode stable|aggressive",
     "  --help",
   ].join("\n");
 }

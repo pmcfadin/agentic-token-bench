@@ -5,7 +5,7 @@ const { codexAdapter } = require("./agents/codex");
 const { geminiAdapter } = require("./agents/gemini");
 const { BackupError, RollbackError, ValidationError, WriteError } = require("./errors");
 const { extractManagedBlock, removeManagedBlock, upsertManagedBlock } = require("./managed-files");
-const { probeAgents, probeTools, ensureWritableConfigRoot } = require("./probe");
+const { probeAgents, probeTools, ensureWritableConfigRoot, findProjectRoot } = require("./probe");
 const { captureChangeRecord, initializeState, loadCurrentState, makeManifest, recordBackup, saveManifest } = require("./state");
 const { getPlatform, hashContent, readFileIfExists, removeFileIfExists, stableStringify, writeFileEnsured } = require("./utils");
 
@@ -112,6 +112,26 @@ function performInstallLike(action, target, flags, env = process.env) {
   const results = [];
   const globalWarnings = summarizeToolWarnings(probes.tools);
 
+  if (flags.scope === "project") {
+    const projectRoot = findProjectRoot(process.cwd());
+    if (!projectRoot) {
+      return {
+        ok: false,
+        version: VERSION,
+        action,
+        error: "No project root found (no .git directory in parent chain)",
+        text: "Error: --scope project requires a git repository. No .git found.",
+      };
+    }
+    // Override agent config roots to project-local paths
+    for (const id of ids) {
+      const agent = probes.agents[id];
+      if (agent.status === "present") {
+        agent.configRoot = projectRoot;
+      }
+    }
+  }
+
   for (const id of ids) {
     const adapter = adapterMap[id];
     const agent = adapter.probe(probes);
@@ -134,6 +154,7 @@ function performInstallLike(action, target, flags, env = process.env) {
       agent,
       tools: probes.tools,
       probes,
+      mode: flags.mode || "stable",
     });
 
     if (action === "uninstall") {
@@ -148,7 +169,7 @@ function performInstallLike(action, target, flags, env = process.env) {
     homeDir,
     runId: state.runId,
     backupRoot: state.backupRoot,
-    mode: "stable",
+    mode: flags.mode || "stable",
     probes,
     results,
   });
