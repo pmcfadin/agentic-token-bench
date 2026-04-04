@@ -98,11 +98,23 @@ test("bootstrap scripts contain the thin install flow", () => {
   const posix = fs.readFileSync(posixPath, "utf8");
   const powershell = fs.readFileSync(powershellPath, "utf8");
 
-  assert.match(posix, /npm install -g/);
+  // Original assertions
+  assert.match(posix, /npm install/);
   assert.match(posix, /tokenmax --version/);
-  assert.match(powershell, /npm install -g/);
+  assert.match(powershell, /npm install/);
   assert.match(powershell, /tokenmax install all --yes/);
 
+  // OS/arch detection assertions
+  assert.match(posix, /uname -s/);
+  assert.match(posix, /uname -m/);
+  assert.match(posix, /Unsupported operating system/);
+  assert.match(powershell, /PROCESSOR_ARCHITECTURE/);
+
+  // PATH fallback assertions
+  assert.match(posix, /--prefix/);
+  assert.match(powershell, /localPrefix/i);
+
+  // Syntax check
   const syntax = spawnSync("sh", ["-n", posixPath], { encoding: "utf8" });
   assert.equal(syntax.status, 0, syntax.stderr);
 });
