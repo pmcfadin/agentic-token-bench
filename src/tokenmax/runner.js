@@ -8,7 +8,7 @@ const { BackupError, PreflightError, RollbackError, ValidationError, WriteError 
 const { runPreflight, assertPreflight } = require("./preflight");
 const { extractManagedBlock, removeManagedBlock, upsertManagedBlock } = require("./managed-files");
 const { probeAgents, probeTools, ensureWritableConfigRoot, findProjectRoot } = require("./probe");
-const { captureChangeRecord, initializeState, loadCurrentState, makeManifest, recordBackup, saveManifest } = require("./state");
+const { captureChangeRecord, findChangeRecord, initializeState, loadCurrentState, makeManifest, recordBackup, saveManifest } = require("./state");
 const { renderToolGuidance } = require("./templates");
 const { ensureDir, getPlatform, hashContent, readFileIfExists, removeFileIfExists, stableStringify, writeFileEnsured } = require("./utils");
 
@@ -279,7 +279,8 @@ function performInstallLike(action, target, flags, env = process.env) {
     });
 
     if (action === "uninstall") {
-      results.push(applyUninstall(adapter, agent, changes, state, flags));
+      const priorManifest = loadCurrentState(homeDir);
+      results.push(applyUninstall(adapter, agent, changes, state, flags, priorManifest));
       continue;
     }
 
@@ -438,8 +439,10 @@ function applyInstall(action, adapter, agent, changes, state, flags) {
   }
 }
 
-function applyUninstall(adapter, agent, changes, state, flags) {
+function applyUninstall(adapter, agent, changes, state, flags, priorManifest) {
   const appliedChanges = [];
+  const preservedFiles = [];
+
   for (const change of changes) {
     if (flags.dryRun) {
       appliedChanges.push({ path: change.path, ownership: change.ownership, applied: false });
@@ -465,6 +468,24 @@ function applyUninstall(adapter, agent, changes, state, flags) {
         backupPath,
       });
     } else if (change.ownership === "generated") {
+      // Check if the user has modified this file since install.
+      const record = findChangeRecord(priorManifest, agent.id, change.path);
+      if (record && record.contentHash) {
+        const currentHash = hashContent(existing);
+        if (currentHash !== record.contentHash && !flags.force) {
+          // User-modified: skip deletion and record a warning.
+          const warning = `Preserved ${change.path}: modified since install`;
+          preservedFiles.push(change.path);
+          appliedChanges.push({
+            path: change.path,
+            ownership: change.ownership,
+            applied: false,
+            preserved: true,
+            warning,
+          });
+          continue;
+        }
+      }
       removeFileIfExists(change.path);
       appliedChanges.push({
         path: change.path,
@@ -488,11 +509,18 @@ function applyUninstall(adapter, agent, changes, state, flags) {
     }
   }
 
-  return {
+  const result = {
     agent: agent.id,
     status: flags.dryRun ? "dry-run" : "removed",
     changes: appliedChanges,
   };
+
+  if (preservedFiles.length > 0) {
+    result.preservedFiles = preservedFiles;
+    result.warnings = preservedFiles.map((p) => `Preserved ${p}: modified since install`);
+  }
+
+  return result;
 }
 
 function rollbackChanges(rollbackStack, options = {}) {
@@ -647,6 +675,16 @@ function renderActionText(action, results, warnings, flags) {
       lines.push(`  ${result.error}`);
     }
   }
+
+  // Collect preserved files across all results.
+  const allPreserved = results.flatMap((result) => result.preservedFiles || []);
+  if (allPreserved.length > 0) {
+    lines.push("", "Preserved due to user modifications:");
+    for (const filePath of allPreserved) {
+      lines.push(`- ${filePath}`);
+    }
+  }
+
   if (warnings.length > 0) {
     lines.push("", "Warnings:");
     for (const warning of warnings) {

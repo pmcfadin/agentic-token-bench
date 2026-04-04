@@ -85,8 +85,30 @@ function captureChangeRecord(change, content, backupPath, validation = "pending"
   };
 }
 
+/**
+ * Find the change record for a specific file path owned by a given agent in the manifest.
+ * Returns the change entry (with contentHash, blockHash, fragmentHash) or null if not found.
+ */
+function findChangeRecord(manifest, agentId, filePath) {
+  if (!manifest || !Array.isArray(manifest.results)) {
+    return null;
+  }
+  for (const result of manifest.results) {
+    if (result.agent !== agentId) {
+      continue;
+    }
+    for (const change of result.changes || []) {
+      if (change.path === filePath) {
+        return change;
+      }
+    }
+  }
+  return null;
+}
+
 module.exports = {
   captureChangeRecord,
+  findChangeRecord,
   initializeState,
   loadCurrentState,
   makeManifest,

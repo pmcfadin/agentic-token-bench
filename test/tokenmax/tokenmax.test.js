@@ -669,6 +669,151 @@ test("preflight: --dry-run still runs preflight checks without creating dirs", (
   assert.equal(fs.existsSync(claudeRoot), false);
 });
 
+// ---------------------------------------------------------------------------
+// Uninstall: preserve user-modified generated files
+// ---------------------------------------------------------------------------
+
+test("uninstall skips modified generated file and records warning", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  const commandFile = path.join(fixture.home, ".claude", "commands", "tokenmax.md");
+  assert.equal(fs.existsSync(commandFile), true);
+
+  // User edits the generated file
+  fs.appendFileSync(commandFile, "\nUSER EDIT", "utf8");
+
+  const uninstall = performInstallLike("uninstall", "claude", baseFlags(), fixture.env);
+
+  // File must still exist and contain the user edit
+  assert.equal(fs.existsSync(commandFile), true, "modified generated file should be preserved");
+  assert.match(fs.readFileSync(commandFile, "utf8"), /USER EDIT/);
+
+  // Result should carry a warning about the preserved file
+  const agentResult = uninstall.results[0];
+  assert.ok(Array.isArray(agentResult.warnings), "warnings array should be present");
+  const hasPreservedWarning = agentResult.warnings.some((w) => w.includes(commandFile));
+  assert.equal(hasPreservedWarning, true, `Expected preserved-file warning, got: ${JSON.stringify(agentResult.warnings)}`);
+});
+
+test("uninstall removes unmodified generated file", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  const commandFile = path.join(fixture.home, ".claude", "commands", "tokenmax.md");
+  assert.equal(fs.existsSync(commandFile), true);
+
+  // Do NOT modify the file — uninstall should remove it normally
+  performInstallLike("uninstall", "claude", baseFlags(), fixture.env);
+
+  assert.equal(fs.existsSync(commandFile), false, "unmodified generated file should be removed on uninstall");
+});
+
+test("uninstall --force removes modified generated file", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  const commandFile = path.join(fixture.home, ".claude", "commands", "tokenmax.md");
+  fs.appendFileSync(commandFile, "\nUSER EDIT", "utf8");
+
+  // --force should override the preservation check
+  performInstallLike("uninstall", "claude", { ...baseFlags(), force: true }, fixture.env);
+
+  assert.equal(fs.existsSync(commandFile), false, "--force should remove even a modified generated file");
+});
+
+test("uninstall text output lists preserved files", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  const commandFile = path.join(fixture.home, ".claude", "commands", "tokenmax.md");
+  fs.appendFileSync(commandFile, "\nUSER EDIT", "utf8");
+
+  const uninstall = performInstallLike("uninstall", "claude", baseFlags(), fixture.env);
+
+  assert.match(uninstall.text, /Preserved due to user modifications:/);
+  assert.ok(uninstall.text.includes(commandFile), `Expected commandFile in text, got: ${uninstall.text}`);
+});
+
+test("uninstall managed-block preserves surrounding user content", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd"],
+    qmdCollections: "demo-project",
+  });
+
+  // Write user content to CLAUDE.md before install
+  const claudeRoot = path.join(fixture.home, ".claude");
+  fs.mkdirSync(claudeRoot, { recursive: true });
+  const claudeMd = path.join(claudeRoot, "CLAUDE.md");
+  fs.writeFileSync(claudeMd, "# My Project\n\nUser notes above.\n", "utf8");
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  // After install, managed block should be present alongside user content
+  const afterInstall = fs.readFileSync(claudeMd, "utf8");
+  assert.match(afterInstall, /User notes above\./);
+  assert.match(afterInstall, /tokenmax:start/);
+
+  // Uninstall should remove the block but keep user content
+  performInstallLike("uninstall", "claude", baseFlags(), fixture.env);
+
+  const afterUninstall = fs.readFileSync(claudeMd, "utf8");
+  assert.match(afterUninstall, /User notes above\./, "user content before block must be preserved after uninstall");
+  assert.doesNotMatch(afterUninstall, /tokenmax:start/, "managed block start marker must be removed");
+  assert.doesNotMatch(afterUninstall, /tokenmax:end/, "managed block end marker must be removed");
+});
+
+test("uninstall json-fragment preserves unrelated keys", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["rtk"],
+    qmdCollections: "",
+  });
+
+  // Write settings.json with an unrelated key before install
+  const claudeRoot = path.join(fixture.home, ".claude");
+  fs.mkdirSync(claudeRoot, { recursive: true });
+  const settingsPath = path.join(claudeRoot, "settings.json");
+  fs.writeFileSync(settingsPath, JSON.stringify({ customKey: "value" }) + "\n", "utf8");
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  // After install, hook should be present alongside custom key
+  const afterInstall = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+  assert.equal(afterInstall.customKey, "value");
+  assert.ok(afterInstall.hooks, "hook should be present after install");
+
+  // Uninstall should remove the hook but keep customKey
+  performInstallLike("uninstall", "claude", baseFlags(), fixture.env);
+
+  // File should still exist with customKey, but hook removed
+  assert.equal(fs.existsSync(settingsPath), true, "settings.json should still exist with remaining keys");
+  const afterUninstall = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+  assert.equal(afterUninstall.customKey, "value", "customKey must be preserved after uninstall");
+  assert.equal(afterUninstall.hooks, undefined, "hooks key must be removed after uninstall");
+});
+
 function baseFlags() {
   return {
     json: false,
