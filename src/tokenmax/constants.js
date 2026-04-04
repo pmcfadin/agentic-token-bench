@@ -18,6 +18,7 @@ const CURRENT_STATE_FILE = "current.json";
 const MANIFESTS_DIR = "manifests";
 const BACKUPS_DIR = "backups";
 const LOGS_DIR = "logs";
+const ASSETS_DIR = "assets";
 
 const TOOL_CAPABILITIES = {
   qmd: {
@@ -69,11 +70,13 @@ function statePaths(homeDir) {
     manifestsDir: path.join(root, MANIFESTS_DIR),
     backupsDir: path.join(root, BACKUPS_DIR),
     logsDir: path.join(root, LOGS_DIR),
+    assetsDir: path.join(root, ASSETS_DIR),
   };
 }
 
 module.exports = {
   AGENT_IDS,
+  ASSETS_DIR,
   BACKUPS_DIR,
   CURRENT_STATE_FILE,
   LOGS_DIR,

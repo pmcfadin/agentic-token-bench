@@ -1,5 +1,6 @@
 const fs = require("fs");
-const { AGENT_IDS, VERSION } = require("./constants");
+const path = require("path");
+const { AGENT_IDS, VERSION, statePaths } = require("./constants");
 const { claudeAdapter, CLAUDE_HOOK } = require("./agents/claude");
 const { codexAdapter } = require("./agents/codex");
 const { geminiAdapter } = require("./agents/gemini");
@@ -7,7 +8,8 @@ const { BackupError, RollbackError, ValidationError, WriteError } = require("./e
 const { extractManagedBlock, removeManagedBlock, upsertManagedBlock } = require("./managed-files");
 const { probeAgents, probeTools, ensureWritableConfigRoot, findProjectRoot } = require("./probe");
 const { captureChangeRecord, initializeState, loadCurrentState, makeManifest, recordBackup, saveManifest } = require("./state");
-const { getPlatform, hashContent, readFileIfExists, removeFileIfExists, stableStringify, writeFileEnsured } = require("./utils");
+const { renderToolGuidance } = require("./templates");
+const { ensureDir, getPlatform, hashContent, readFileIfExists, removeFileIfExists, stableStringify, writeFileEnsured } = require("./utils");
 
 function adapters() {
   return {
@@ -98,6 +100,73 @@ function renderDoctorText(probes, selected, warnings) {
   return lines.join("\n");
 }
 
+function installSharedAssets(state, probes, flags) {
+  const paths = statePaths(probes.platform.homeDir);
+  const assetsDir = paths.assetsDir;
+  const sharedAssets = [];
+
+  if (flags.dryRun) {
+    const guidancePath = path.join(assetsDir, "tool-guidance.md");
+    sharedAssets.push({
+      path: guidancePath,
+      ownership: "generated",
+      contentHash: null,
+      applied: false,
+    });
+    return sharedAssets;
+  }
+
+  ensureDir(assetsDir);
+
+  const guidanceContent = renderToolGuidance(probes.tools);
+  const guidancePath = path.join(assetsDir, "tool-guidance.md");
+
+  const existing = readFileIfExists(guidancePath);
+  if (state.backupRoot) {
+    recordBackup(state.backupRoot, guidancePath, existing);
+  }
+
+  writeFileEnsured(guidancePath, guidanceContent + "\n");
+
+  sharedAssets.push({
+    path: guidancePath,
+    ownership: "generated",
+    contentHash: hashContent(guidanceContent + "\n"),
+    applied: true,
+  });
+
+  return sharedAssets;
+}
+
+function removeSharedAssets(state, probes, flags) {
+  const paths = statePaths(probes.platform.homeDir);
+  const assetsDir = paths.assetsDir;
+  const guidancePath = path.join(assetsDir, "tool-guidance.md");
+
+  if (flags.dryRun) return;
+
+  const existing = readFileIfExists(guidancePath);
+  if (existing != null && state.backupRoot) {
+    recordBackup(state.backupRoot, guidancePath, existing);
+  }
+  removeFileIfExists(guidancePath);
+}
+
+function computeSharedAssetDrift(sharedAssets) {
+  const drift = [];
+  for (const asset of sharedAssets || []) {
+    const currentContent = readFileIfExists(asset.path);
+    if (!currentContent) {
+      drift.push({ path: asset.path, reason: "missing" });
+      continue;
+    }
+    if (asset.contentHash && hashContent(currentContent) !== asset.contentHash) {
+      drift.push({ path: asset.path, reason: "content_changed" });
+    }
+  }
+  return drift;
+}
+
 function performInstallLike(action, target, flags, env = process.env) {
   const probes = gatherProbes(env);
   const ids = selectedAgents(target);
@@ -130,6 +199,13 @@ function performInstallLike(action, target, flags, env = process.env) {
         agent.configRoot = projectRoot;
       }
     }
+  }
+
+  let sharedAssets = [];
+  if (action === "uninstall") {
+    removeSharedAssets(state, probes, flags);
+  } else {
+    sharedAssets = installSharedAssets(state, probes, flags);
   }
 
   for (const id of ids) {
@@ -172,6 +248,7 @@ function performInstallLike(action, target, flags, env = process.env) {
     mode: flags.mode || "stable",
     probes,
     results,
+    sharedAssets,
   });
 
   if (!flags.dryRun && action !== "doctor") {
@@ -410,14 +487,16 @@ function status(env = process.env) {
   const homeDir = probes.platform.homeDir;
   const current = loadCurrentState(homeDir);
   const drift = current ? computeDrift(current.results) : [];
+  const assetDrift = current ? computeSharedAssetDrift(current.sharedAssets) : [];
+  const allDrift = [...drift, ...assetDrift];
   return {
     ok: true,
     version: VERSION,
     action: "status",
     current,
-    drift,
+    drift: allDrift,
     warnings: summarizeToolWarnings(probes.tools),
-    text: renderStatusText(current, drift),
+    text: renderStatusText(current, allDrift),
   };
 }
 
