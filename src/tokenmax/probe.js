@@ -122,10 +122,23 @@ function ensureWritableConfigRoot(configRoot) {
   fs.rmSync(markerPath, { force: true });
 }
 
+function findProjectRoot(startDir) {
+  let current = path.resolve(startDir);
+  const root = path.parse(current).root;
+  while (current !== root) {
+    if (fileExists(path.join(current, ".git"))) {
+      return current;
+    }
+    current = path.dirname(current);
+  }
+  return null;
+}
+
 module.exports = {
   agentConfigRoots,
   ensureWritableConfigRoot,
   findExecutable,
+  findProjectRoot,
   probeAgents,
   probeTools,
 };

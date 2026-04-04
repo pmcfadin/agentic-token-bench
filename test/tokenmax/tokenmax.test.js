@@ -92,6 +92,34 @@ test("status reports drift and repair restores missing generated files", () => {
   assert.equal(fs.existsSync(commandPath), true);
 });
 
+test("parseCommand accepts --scope and --mode flags with valid values", () => {
+  const cmd = parseCommand(["install", "all", "--scope", "project", "--mode", "aggressive"]);
+  assert.equal(cmd.flags.scope, "project");
+  assert.equal(cmd.flags.mode, "aggressive");
+});
+
+test("parseCommand rejects invalid --scope and --mode values", () => {
+  assert.throws(() => parseCommand(["install", "all", "--scope", "invalid"]), /Invalid --scope/);
+  assert.throws(() => parseCommand(["install", "all", "--mode", "invalid"]), /Invalid --mode/);
+});
+
+test("parseCommand defaults scope to user and mode to stable", () => {
+  const cmd = parseCommand(["install", "all"]);
+  assert.equal(cmd.flags.scope, "user");
+  assert.equal(cmd.flags.mode, "stable");
+});
+
+test("install with --mode aggressive stores mode in manifest", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd"],
+    qmdCollections: "demo-project",
+  });
+
+  const result = performInstallLike("install", "claude", { ...baseFlags(), mode: "aggressive", scope: "user" }, fixture.env);
+  assert.equal(result.manifest.mode, "aggressive");
+});
+
 test("bootstrap scripts contain the thin install flow", () => {
   const posixPath = path.join(process.cwd(), "scripts", "tokenmax", "install.sh");
   const powershellPath = path.join(process.cwd(), "scripts", "tokenmax", "install.ps1");
