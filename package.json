@@ -2,14 +2,32 @@
   "name": "tokenmax",
   "version": "0.1.0",
   "description": "Installer and maintenance CLI for token-saving agent tooling.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pmcfadin/agentic-token-bench.git"
+  },
+  "homepage": "https://github.com/pmcfadin/agentic-token-bench#readme",
+  "bugs": {
+    "url": "https://github.com/pmcfadin/agentic-token-bench/issues"
+  },
   "bin": {
     "tokenmax": "bin/tokenmax.js"
   },
   "type": "commonjs",
+  "files": [
+    "bin/",
+    "src/tokenmax/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "test": "node --test test/tokenmax/*.test.js"
   },
   "engines": {
     "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
