@@ -893,3 +893,257 @@ fi
 exit 0
 `;
 }
+
+// ---------------------------------------------------------------------------
+// Smart repair tests (issue #58)
+// ---------------------------------------------------------------------------
+
+test("repair with all files current: no files rewritten, all repairStatus current", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  // Record mtimes before repair
+  const claudeRoot = path.join(fixture.home, ".claude");
+  const commandFile = path.join(claudeRoot, "commands", "tokenmax.md");
+  const mtimeBefore = fs.statSync(commandFile).mtimeMs;
+
+  const repair = performInstallLike("repair", "claude", baseFlags(), fixture.env);
+  const agentResult = repair.results[0];
+
+  assert.equal(agentResult.status, "current");
+  for (const change of agentResult.changes) {
+    assert.equal(change.repairStatus, "current", `Expected current for ${change.path}`);
+    assert.equal(change.applied, false, `Expected applied: false for ${change.path}`);
+  }
+
+  // File mtime should be unchanged (not rewritten)
+  const mtimeAfter = fs.statSync(commandFile).mtimeMs;
+  assert.equal(mtimeAfter, mtimeBefore, "Command file should not have been rewritten");
+});
+
+test("repair of deleted generated file: restores missing file, others are current", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  const claudeRoot = path.join(fixture.home, ".claude");
+  const commandFile = path.join(claudeRoot, "commands", "tokenmax.md");
+  fs.rmSync(commandFile, { force: true });
+  assert.equal(fs.existsSync(commandFile), false);
+
+  const repair = performInstallLike("repair", "claude", baseFlags(), fixture.env);
+  const agentResult = repair.results[0];
+
+  assert.equal(agentResult.status, "repaired");
+
+  // The deleted file should be repaired
+  const commandChange = agentResult.changes.find((c) => c.path === commandFile);
+  assert.ok(commandChange, "Should have a change record for the deleted file");
+  assert.equal(commandChange.repairStatus, "repaired");
+  assert.equal(commandChange.applied, true);
+  assert.equal(fs.existsSync(commandFile), true, "File should be restored");
+
+  // Other changes should be current
+  const others = agentResult.changes.filter((c) => c.path !== commandFile);
+  for (const change of others) {
+    assert.equal(change.repairStatus, "current", `Expected current for ${change.path}`);
+  }
+});
+
+test("repair of drifted managed block: block restored, user content preserved", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd"],
+    qmdCollections: "demo-project",
+  });
+
+  const claudeRoot = path.join(fixture.home, ".claude");
+  fs.mkdirSync(claudeRoot, { recursive: true });
+  const claudeMd = path.join(claudeRoot, "CLAUDE.md");
+  fs.writeFileSync(claudeMd, "# My Project\n\nUser notes here.\n", "utf8");
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  // Edit the managed block in place by appending something after the markers, then
+  // overwriting with drifted block content.
+  const afterInstall = fs.readFileSync(claudeMd, "utf8");
+  assert.match(afterInstall, /tokenmax:start/);
+
+  // Replace block content with drifted version
+  const drifted = afterInstall.replace(
+    /(<!-- tokenmax:start -->)[^]*?(<!-- tokenmax:end -->)/,
+    "$1\nDRIFTED CONTENT\n$2"
+  );
+  fs.writeFileSync(claudeMd, drifted, "utf8");
+
+  const repair = performInstallLike("repair", "claude", baseFlags(), fixture.env);
+  const agentResult = repair.results[0];
+
+  const claudeChange = agentResult.changes.find((c) => c.path === claudeMd);
+  assert.ok(claudeChange, "Should have change record for CLAUDE.md");
+  assert.equal(claudeChange.repairStatus, "repaired");
+
+  const afterRepair = fs.readFileSync(claudeMd, "utf8");
+  assert.match(afterRepair, /User notes here\./, "User content before block must be preserved");
+  assert.doesNotMatch(afterRepair, /DRIFTED CONTENT/, "Drifted block content must be replaced");
+  assert.match(afterRepair, /tokenmax:start/, "Managed block markers must be present after repair");
+});
+
+test("repair with no prior manifest: falls back to full install with warning", () => {
+  // Fresh temp HOME with no tokenmax manifest
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  // Ensure no manifest exists
+  const manifestPath = path.join(fixture.home, ".tokenmax", "current.json");
+  assert.equal(fs.existsSync(manifestPath), false, "No prior manifest should exist");
+
+  const repair = performInstallLike("repair", "claude", baseFlags(), fixture.env);
+
+  // Warning about no prior manifest
+  assert.ok(
+    repair.warnings.some((w) => w.includes("No prior manifest found")),
+    `Expected no-manifest warning, got: ${JSON.stringify(repair.warnings)}`
+  );
+
+  // Files should be written (full install behavior)
+  const claudeRoot = path.join(fixture.home, ".claude");
+  const commandFile = path.join(claudeRoot, "commands", "tokenmax.md");
+  assert.equal(fs.existsSync(commandFile), true, "Command file should be written as fallback");
+
+  // Agent status should indicate repaired (install-like)
+  const agentResult = repair.results[0];
+  assert.equal(agentResult.status, "repaired");
+});
+
+test("repair of partial prior install: failed agent gets fresh re-attempt", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  // Flip the agent status to "failed" in the saved manifest
+  const manifestPath = path.join(fixture.home, ".tokenmax", "current.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const claudeResult = manifest.results.find((r) => r.agent === "claude");
+  assert.ok(claudeResult, "claude result should exist in manifest");
+  claudeResult.status = "failed";
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest) + "\n", "utf8");
+
+  // Run repair — claude's prior failed status should cause all changes to be fresh
+  const repair = performInstallLike("repair", "claude", baseFlags(), fixture.env);
+  const agentResult = repair.results[0];
+
+  assert.equal(agentResult.status, "repaired", "Agent with prior failed status should be repaired");
+  for (const change of agentResult.changes) {
+    assert.equal(change.repairStatus, "repaired", `Expected repaired for ${change.path} (prior was failed)`);
+  }
+});
+
+test("repair --dry-run: reports without writing, manifest not modified", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  const manifestPath = path.join(fixture.home, ".tokenmax", "current.json");
+  const manifestBefore = fs.readFileSync(manifestPath, "utf8");
+
+  // Delete a file to simulate drift
+  const claudeRoot = path.join(fixture.home, ".claude");
+  const commandFile = path.join(claudeRoot, "commands", "tokenmax.md");
+  fs.rmSync(commandFile, { force: true });
+
+  const repair = performInstallLike("repair", "claude", { ...baseFlags(), dryRun: true }, fixture.env);
+
+  // File must NOT be recreated in dry-run
+  assert.equal(fs.existsSync(commandFile), false, "Dry-run must not create files");
+
+  // Agent status should be dry-run
+  const agentResult = repair.results[0];
+  assert.equal(agentResult.status, "dry-run");
+
+  // The deleted file should show repairStatus: repaired, applied: false
+  const commandChange = agentResult.changes.find((c) => c.path === commandFile);
+  assert.ok(commandChange, "Should have change record for deleted file");
+  assert.equal(commandChange.repairStatus, "repaired");
+  assert.equal(commandChange.applied, false);
+
+  // Other files should be current
+  const others = agentResult.changes.filter((c) => c.path !== commandFile);
+  for (const change of others) {
+    assert.equal(change.repairStatus, "current");
+  }
+
+  // Manifest must not be modified (dry-run does not save)
+  const manifestAfter = fs.readFileSync(manifestPath, "utf8");
+  assert.equal(manifestAfter, manifestBefore, "Manifest must not be modified by dry-run repair");
+});
+
+test("repair JSON output shape: agents have files array with repairStatus, changed_files only has repaired paths", () => {
+  const fixture = createFixtureEnvironment({
+    agents: ["claude"],
+    tools: ["qmd", "rtk"],
+    qmdCollections: "demo-project",
+  });
+
+  performInstallLike("install", "claude", baseFlags(), fixture.env);
+
+  // Delete one file to trigger a repair
+  const claudeRoot = path.join(fixture.home, ".claude");
+  const commandFile = path.join(claudeRoot, "commands", "tokenmax.md");
+  fs.rmSync(commandFile, { force: true });
+
+  const repair = performInstallLike("repair", "claude", baseFlags(), fixture.env);
+  const json = formatJsonOutput(repair);
+
+  // Each agent should have a files array with repairStatus entries
+  assert.ok("claude" in json.agents, "claude should be in agents");
+  const claudeEntry = json.agents.claude;
+  assert.ok(Array.isArray(claudeEntry.files), "files should be an array");
+  assert.ok(claudeEntry.files.length > 0, "files should not be empty");
+  for (const file of claudeEntry.files) {
+    assert.ok("path" in file, "Each file entry should have path");
+    assert.ok("repairStatus" in file, "Each file entry should have repairStatus");
+    assert.ok(
+      ["repaired", "current", "failed"].includes(file.repairStatus),
+      `Unexpected repairStatus: ${file.repairStatus}`
+    );
+  }
+
+  // changed_files should only contain repaired files
+  const repairedPaths = claudeEntry.files
+    .filter((f) => f.repairStatus === "repaired")
+    .map((f) => f.path)
+    .sort();
+  assert.deepEqual(json.changed_files, repairedPaths, "changed_files should only contain repaired files");
+
+  // The deleted command file should be in changed_files
+  assert.ok(json.changed_files.includes(commandFile), "Deleted and repaired file should be in changed_files");
+
+  // current files must not be in changed_files
+  const currentPaths = claudeEntry.files
+    .filter((f) => f.repairStatus === "current")
+    .map((f) => f.path);
+  for (const p of currentPaths) {
+    assert.equal(json.changed_files.includes(p), false, `Current file ${p} should not be in changed_files`);
+  }
+});
