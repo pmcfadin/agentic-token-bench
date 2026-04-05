@@ -249,7 +249,13 @@ function performInstallLike(action, target, flags, env = process.env) {
     }
   }
 
-  const priorManifest = action === "uninstall" ? loadCurrentState(homeDir) : null;
+  const priorManifest = (action === "uninstall" || action === "repair")
+    ? loadCurrentState(homeDir)
+    : null;
+
+  if (action === "repair" && !priorManifest) {
+    globalWarnings.push("No prior manifest found; falling back to full install.");
+  }
 
   for (const id of ids) {
     const adapter = adapterMap[id];
@@ -278,6 +284,11 @@ function performInstallLike(action, target, flags, env = process.env) {
       continue;
     }
 
+    if (action === "repair" && priorManifest) {
+      results.push(applyRepair(adapter, agent, changes, state, flags, priorManifest));
+      continue;
+    }
+
     results.push(applyInstall(action, adapter, agent, changes, state, flags));
   }
 
@@ -297,7 +308,7 @@ function performInstallLike(action, target, flags, env = process.env) {
   }
 
   return {
-    ok: results.every((result) => ["installed", "repaired", "removed", "skipped", "dry-run"].includes(result.status)),
+    ok: results.every((result) => ["installed", "repaired", "current", "removed", "skipped", "dry-run"].includes(result.status)),
     version: VERSION,
     action,
     target,
@@ -431,6 +442,161 @@ function applyInstall(action, adapter, agent, changes, state, flags) {
       changes: appliedChanges,
     };
   }
+}
+
+function applyRepair(adapter, agent, changes, state, flags, priorManifest) {
+  const appliedChanges = [];
+
+  // Find the prior agent result to determine if that agent previously failed.
+  const priorAgentResult = priorManifest.results
+    ? priorManifest.results.find((r) => r.agent === agent.id)
+    : null;
+  const priorFailed = !priorAgentResult || priorAgentResult.status === "failed";
+
+  let firstFailure = null;
+  let anyRepaired = false;
+
+  for (const change of changes) {
+    // Determine repairStatus by comparing against filesystem.
+    let repairStatus;
+
+    if (priorFailed) {
+      // Prior agent failed or missing — treat every change as fresh.
+      repairStatus = "repaired";
+    } else {
+      const priorRecord = findChangeRecord(priorManifest, agent.id, change.path);
+      if (!priorRecord) {
+        repairStatus = "repaired";
+      } else {
+        // Compute drift using same logic as computeDrift.
+        const currentContent = readFileIfExists(change.path);
+        if (!currentContent) {
+          repairStatus = "repaired";
+        } else if (change.ownership === "managed-block") {
+          const block = extractManagedBlock(currentContent);
+          const currentHash = block ? hashContent(block) : null;
+          repairStatus = currentHash !== priorRecord.blockHash ? "repaired" : "current";
+        } else if (change.ownership === "json-fragment") {
+          const currentHash = hashContent(stableStringify(extractClaudeHook(currentContent)));
+          repairStatus = currentHash !== priorRecord.fragmentHash ? "repaired" : "current";
+        } else {
+          repairStatus =
+            priorRecord.contentHash && hashContent(currentContent) !== priorRecord.contentHash
+              ? "repaired"
+              : "current";
+        }
+      }
+    }
+
+    if (repairStatus === "current") {
+      const priorRecord = findChangeRecord(priorManifest, agent.id, change.path);
+      appliedChanges.push({
+        path: change.path,
+        ownership: change.ownership,
+        applied: false,
+        repairStatus: "current",
+        contentHash: priorRecord ? priorRecord.contentHash : null,
+        blockHash: priorRecord ? priorRecord.blockHash : null,
+        fragmentHash: priorRecord ? priorRecord.fragmentHash : null,
+      });
+      continue;
+    }
+
+    // repairStatus is "repaired" — write unless dry-run.
+    if (flags.dryRun) {
+      appliedChanges.push({
+        path: change.path,
+        ownership: change.ownership,
+        applied: false,
+        repairStatus: "repaired",
+      });
+      anyRepaired = true;
+      continue;
+    }
+
+    try {
+      const existing = readFileIfExists(change.path);
+      let backupPath;
+      try {
+        backupPath = recordBackup(state.backupRoot, change.path, existing);
+      } catch (err) {
+        throw new BackupError({
+          message: err.message,
+          agent: agent.id,
+          file: change.path,
+          recoveryHint: null,
+        });
+      }
+
+      let nextContent;
+      if (change.ownership === "managed-block") {
+        nextContent = upsertManagedBlock(existing, change.managedBlock);
+      } else if (change.ownership === "generated") {
+        nextContent = change.content;
+      } else if (change.ownership === "json-fragment") {
+        nextContent = applyClaudeHook(existing, change.jsonFragment);
+      } else {
+        throw new Error(`Unsupported change ownership: ${change.ownership}`);
+      }
+
+      try {
+        writeFileEnsured(change.path, nextContent);
+      } catch (err) {
+        throw new WriteError({
+          message: err.message,
+          agent: agent.id,
+          file: change.path,
+          recoveryHint: null,
+        });
+      }
+
+      appliedChanges.push({
+        ...captureChangeRecord(change, nextContent, backupPath, "ok"),
+        applied: true,
+        repairStatus: "repaired",
+      });
+      anyRepaired = true;
+    } catch (err) {
+      appliedChanges.push({
+        path: change.path,
+        ownership: change.ownership,
+        applied: false,
+        repairStatus: "failed",
+        error: err.message,
+        errorCode: err.code || null,
+        recoveryHint: err.recoveryHint || null,
+      });
+      if (!firstFailure) {
+        firstFailure = err;
+      }
+    }
+  }
+
+  // Aggregate per-agent status.
+  let agentStatus;
+  if (flags.dryRun) {
+    agentStatus = "dry-run";
+  } else if (firstFailure) {
+    agentStatus = "failed";
+  } else if (anyRepaired) {
+    agentStatus = "repaired";
+  } else {
+    agentStatus = "current";
+  }
+
+  const result = {
+    agent: agent.id,
+    status: agentStatus,
+    changes: appliedChanges,
+  };
+
+  if (firstFailure) {
+    result.error = firstFailure.message;
+    result.errorCode = firstFailure.code || null;
+    result.recoveryHint = firstFailure.recoveryHint || null;
+  }
+
+  return result;
 }
 
 function applyUninstall(agent, changes, state, flags, priorManifest) {
@@ -657,12 +823,47 @@ function renderStatusText(current, drift) {
   return lines.join("\n");
 }
 
+function shortenPath(filePath) {
+  const home = process.env.HOME || "";
+  if (home && filePath.startsWith(home)) {
+    return `~${filePath.slice(home.length)}`;
+  }
+  return filePath;
+}
+
 function renderActionText(action, results, warnings, flags) {
   const lines = [`tokenmax ${action}${flags.dryRun ? " (dry-run)" : ""}`];
-  for (const result of results) {
-    lines.push(`- ${result.agent}: ${result.status}${result.reason ? ` (${result.reason})` : ""}`);
-    if (result.error) {
-      lines.push(`  ${result.error}`);
+
+  if (action === "repair") {
+    lines[0] = `Repair results:${flags.dryRun ? " (dry-run)" : ""}`;
+    for (const result of results) {
+      const changes = result.changes || [];
+      const repairedCount = changes.filter((c) => c.repairStatus === "repaired").length;
+      const currentCount = changes.filter((c) => c.repairStatus === "current").length;
+      const failedCount = changes.filter((c) => c.repairStatus === "failed").length;
+
+      const parts = [];
+      if (repairedCount > 0) parts.push(`${repairedCount} repaired`);
+      if (currentCount > 0) parts.push(`${currentCount} current`);
+      if (failedCount > 0) parts.push(`${failedCount} failed`);
+      const summary = parts.length > 0 ? ` (${parts.join(", ")})` : "";
+
+      lines.push(`  ${result.agent}: ${result.status}${summary}`);
+      for (const change of changes) {
+        if (change.repairStatus) {
+          lines.push(`    ${shortenPath(change.path)}: ${change.repairStatus}`);
+        }
+      }
+      if (result.error) {
+        lines.push(`    error: ${result.error}`);
+      }
+    }
+  } else {
+    for (const result of results) {
+      lines.push(`- ${result.agent}: ${result.status}${result.reason ? ` (${result.reason})` : ""}`);
+      if (result.error) {
+        lines.push(`  ${result.error}`);
+      }
     }
   }
 
