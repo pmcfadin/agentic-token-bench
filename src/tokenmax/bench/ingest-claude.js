@@ -49,9 +49,6 @@ function ingestClaudeDir(claudeHome, { since, cwd } = {}) {
     if (!fs.statSync(slugPath).isDirectory()) continue;
 
     const turnCwd = slugToCwd(slug);
-
-    // Apply cwd filter: if requested cwd is specified, the turn's cwd must
-    // start with it.
     if (cwd != null && !turnCwd.startsWith(cwd)) continue;
 
     for (const entry of fs.readdirSync(slugPath)) {
@@ -72,7 +69,6 @@ function ingestClaudeDir(claudeHome, { since, cwd } = {}) {
           continue; // schema-drift: unparseable line
         }
 
-        // Only process assistant messages with usage
         if (
           !obj.message ||
           obj.message.role !== "assistant" ||
@@ -85,12 +81,10 @@ function ingestClaudeDir(claudeHome, { since, cwd } = {}) {
         const timestamp = obj.timestamp;
         if (!timestamp) continue;
 
-        // Apply since filter
         const ts = new Date(timestamp);
         if (Number.isNaN(ts.getTime())) continue;
         if (since != null && ts < since) continue;
 
-        // Count tool_use items in content array
         const content = obj.message.content;
         const toolCalls = Array.isArray(content)
           ? content.filter((c) => c && c.type === "tool_use").length

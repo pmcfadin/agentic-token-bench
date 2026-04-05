@@ -61,7 +61,6 @@ function ingestGeminiDir(geminiHome, { since, cwd } = {}) {
       const sessionId = session.sessionId || path.basename(entry, ".json");
 
       for (const msg of session.messages) {
-        // Only gemini messages with a tokens field produce records
         if (!msg || msg.type !== "gemini" || !msg.tokens) continue;
 
         const tok = msg.tokens;

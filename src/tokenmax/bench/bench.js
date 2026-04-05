@@ -45,32 +45,20 @@ function parseCliFilter(value) {
 }
 
 function runBench({ homeDir, clis, since, cwd, now = new Date() }) {
-  const enabled = new Set(clis);
+  const ingesters = {
+    claude: [".claude", ingestClaudeDir],
+    gemini: [".gemini", ingestGeminiDir],
+    codex: [".codex", ingestCodexDir],
+  };
   const turns = [];
-
-  if (enabled.has("claude")) {
-    const claudeHome = path.join(homeDir, ".claude");
-    if (fs.existsSync(claudeHome)) {
-      turns.push(...ingestClaudeDir(claudeHome, { since, cwd }));
-    }
-  }
-  if (enabled.has("gemini")) {
-    const geminiHome = path.join(homeDir, ".gemini");
-    if (fs.existsSync(geminiHome)) {
-      turns.push(...ingestGeminiDir(geminiHome, { since, cwd }));
-    }
-  }
-  if (enabled.has("codex")) {
-    const codexHome = path.join(homeDir, ".codex");
-    if (fs.existsSync(codexHome)) {
-      turns.push(...ingestCodexDir(codexHome, { since, cwd }));
-    }
+  for (const cli of clis) {
+    const [subdir, ingest] = ingesters[cli];
+    turns.push(...ingest(path.join(homeDir, subdir), { since, cwd }));
   }
 
   const { date: installDate, source: installSource } = detectInstallDate(homeDir);
   const summary = summarize(turns, { installDate });
 
-  // Rolling median series, per enabled CLI with any turns
   const rolling = {};
   for (const cli of clis) {
     const cliTurns = turns.filter((t) => t.cli === cli);

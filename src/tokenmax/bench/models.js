@@ -20,7 +20,8 @@
  * the cwd root, no prompts. Ingesters must drop all content fields.
  */
 
-const VALID_CLIS = ["claude", "gemini", "codex"];
+const { AGENT_IDS } = require("../constants");
+const VALID_CLIS = AGENT_IDS;
 
 function makeTurn({
   cli,
