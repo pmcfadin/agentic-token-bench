@@ -1,0 +1,54 @@
+{
+  "sessionId": "gemini-session-fixture-1",
+  "projectHash": "abc123",
+  "startTime": "2026-03-15T09:00:00.000Z",
+  "lastUpdated": "2026-03-15T09:20:00.000Z",
+  "messages": [
+    {
+      "id": "msg-001",
+      "timestamp": "2026-03-15T09:05:00.000Z",
+      "type": "user",
+      "content": "help me write a function"
+    },
+    {
+      "id": "msg-002",
+      "timestamp": "2026-03-15T09:06:00.000Z",
+      "type": "gemini",
+      "content": "Here is a function",
+      "tokens": {
+        "input": 500,
+        "output": 200,
+        "cached": 100,
+        "thoughts": 50,
+        "tool": 0,
+        "total": 750
+      }
+    },
+    {
+      "id": "msg-003",
+      "timestamp": "2026-03-15T09:10:00.000Z",
+      "type": "user",
+      "content": "make it faster"
+    },
+    {
+      "id": "msg-004",
+      "timestamp": "2026-03-15T09:11:00.000Z",
+      "type": "gemini",
+      "content": "Here is a faster version"
+    },
+    {
+      "id": "msg-005",
+      "timestamp": "2026-03-15T09:15:00.000Z",
+      "type": "gemini",
+      "content": "Also consider caching",
+      "tokens": {
+        "input": 600,
+        "output": 150,
+        "cached": 200,
+        "thoughts": 0,
+        "tool": 0,
+        "total": 750
+      }
+    }
+  ]
+}
