@@ -54,66 +54,79 @@ The LLM sees a list of file paths instead of every file's content. Same answer, 
 
 `tokenmax` is the user-facing installer for wiring these tools into Claude Code, Codex, and Gemini CLI without hand-editing each config surface.
 
-### Run it from this repo
+### Install
 
-The CLI lives in this repository today. From the repo root:
-
-```bash
-npm install
-node bin/tokenmax.js doctor
-node bin/tokenmax.js install all
-```
-
-You can also make the local executable available on your shell `PATH`:
+From npm (macOS, Linux, Windows):
 
 ```bash
-npm link
+npm install -g tokenmax
 tokenmax doctor
 tokenmax install all
 ```
 
-### Bootstrap scripts
-
-This repo also ships thin bootstrap scripts for the future published package flow:
+Or use the bootstrap scripts, which detect OS/arch, resolve the version, install via `npm`, and fall back to `--prefix ~/.local` with PATH guidance if global install needs sudo:
 
 ```bash
-scripts/tokenmax/install.sh
-scripts/tokenmax/install.ps1
+# POSIX
+curl -fsSL https://raw.githubusercontent.com/pmcfadin/agentic-token-bench/main/scripts/tokenmax/install.sh | sh
+
+# Windows PowerShell
+irm https://raw.githubusercontent.com/pmcfadin/agentic-token-bench/main/scripts/tokenmax/install.ps1 | iex
 ```
 
-Their job is intentionally small: verify `node` and `npm`, install `tokenmax`, print the version, and optionally run `tokenmax install all --yes`.
+Set `TOKENMAX_AUTO_INSTALL_ALL=1` to have the bootstrap also run `tokenmax install all --yes`.
 
-### Supported commands
+### Commands
 
 ```bash
 tokenmax doctor
 tokenmax status
-tokenmax install all
-tokenmax install claude
-tokenmax install codex
-tokenmax install gemini
-tokenmax repair all
-tokenmax uninstall all
+tokenmax install all|claude|codex|gemini
+tokenmax repair all|claude|codex|gemini
+tokenmax uninstall all|claude|codex|gemini
+tokenmax bench [--cli claude,codex,gemini] [--since 30d] [--cwd PATH] [--html FILE] [--json]
 ```
 
-Supported flags in v1:
+`tokenmax bench` is a read-only, passive before/after token-usage report. It
+reads the transcripts each agentic CLI already writes to disk, detects when
+`tokenmax install` first ran (from `~/.tokenmax/installed_at`), and prints a
+per-CLI step change — median input tokens per turn and cache-read ratio — on
+your own real sessions. Aggregates only; no prompts or file content leave the
+report.
+
+### Flags
 
 ```bash
---json
---yes
---dry-run
---force
+--json                     # machine-readable output matching the spec shape
+--yes                      # skip confirmation
+--dry-run                  # plan without writing
+--force                    # override preflight warnings and user-modified-file protection
+--scope user|project       # user-global (~/.claude) or project-local (.claude/ in cwd)
+--mode stable|aggressive   # stable uses only documented surfaces (default)
+--backup / --no-backup     # backups on by default; --no-backup skips them
 ```
 
 ### What `tokenmax install all` changes
 
-`tokenmax` is configure-only in v1. It does **not** install `qmd`, `rtk`, `rg`, `ast-grep`, `comby`, or `fastmod`. It probes for those tools on `PATH`, warns on anything missing, and writes only the documented agent config that applies.
+`tokenmax` is configure-only. It does **not** install `qmd`, `rtk`, `rg`, `ast-grep`, `comby`, or `fastmod`. It probes for those tools on `PATH`, warns on anything missing, and writes only the documented agent config that applies.
 
-- Claude Code: manages a Tokenmax block in `~/.claude/CLAUDE.md`, generates `~/.claude/commands/tokenmax.md`, and writes the documented `rtk` hook to `~/.claude/settings.json` only when `rtk` is installed.
-- Codex: manages a Tokenmax block in `~/.codex/AGENTS.md` and generates `~/.codex/skills/tokenmax/SKILL.md`.
-- Gemini CLI: manages a Tokenmax block in `~/.gemini/GEMINI.md` and generates `~/.gemini/commands/tokenmax.toml`.
+- **Shared asset**: writes `~/.tokenmax/assets/tool-guidance.md` that all agents can reference.
+- **Claude Code**: manages a Tokenmax block in `~/.claude/CLAUDE.md`, generates `~/.claude/commands/tokenmax.md`, and writes the documented `rtk` `PreToolUse` hook to `~/.claude/settings.json` only when `rtk` is installed.
+- **Codex**: manages a Tokenmax block in `~/.codex/AGENTS.md` and generates `~/.codex/skills/tokenmax/SKILL.md`.
+- **Gemini CLI**: manages a Tokenmax block in `~/.gemini/GEMINI.md` and generates `~/.gemini/commands/tokenmax.toml`.
 
-All managed edits are reversible. Tokenmax records state, backups, and manifests under `~/.tokenmax/`, and `tokenmax status` reports drift from the last successful install.
+`--scope project` writes to `./.claude/`, `./.codex/`, `./.gemini/` in the current directory instead of the user home directory.
+
+### Reversibility and safety
+
+- **Preflight**: checks writable config roots, supported OS, helper tool availability before any writes. Failures abort with a `preflight_failed` error and a recovery hint.
+- **Backups**: every touched file is backed up to `~/.tokenmax/backups/<runId>/` before being written (unless `--no-backup`).
+- **Rollback**: on any write or validation failure, previously applied changes in the same run are rolled back from backup.
+- **Drift-aware repair**: `tokenmax repair` loads the last manifest, compares each file to its recorded hash, and re-writes only drifted or missing files. Unchanged files report `repairStatus: "current"`.
+- **Safe uninstall**: files you modified after install are preserved (skipped with a warning); only unmodified tokenmax-generated files are removed. `--force` overrides this protection. Managed blocks are removed from shared files without touching surrounding user content.
+- **Status and drift**: `tokenmax status` reports drift from the last successful install, including shared assets.
+
+All state, backups, and manifests live under `~/.tokenmax/`.
 
 ---
 

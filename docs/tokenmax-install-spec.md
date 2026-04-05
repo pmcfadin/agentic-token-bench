@@ -134,6 +134,7 @@ tokenmax status
 tokenmax install all
 tokenmax uninstall all
 tokenmax repair all
+tokenmax bench
 ```
 
 ### Per-agent commands
@@ -212,6 +213,34 @@ Re-applies or fixes Tokenmax-owned assets when:
 - a managed file was deleted
 - a generated command wrapper drifted
 - a prior install was partial
+
+### `tokenmax bench`
+
+Passive before/after token-usage report built from the transcripts already
+written by Claude Code, Gemini CLI, and Codex CLI.
+
+```bash
+tokenmax bench                      # text report, all CLIs
+tokenmax bench --cli claude,codex   # filter CLIs
+tokenmax bench --since 30d          # relative window
+tokenmax bench --since 2026-02-01   # absolute window
+tokenmax bench --cwd ~/projects/foo # scope to one project
+tokenmax bench --html report.html   # single-file shareable chart
+tokenmax bench --json               # machine-readable output
+```
+
+The install-date anchor is written to `~/.tokenmax/installed_at` on first
+`tokenmax install` and is never overwritten, so upgrades preserve the original
+divider. If the marker is missing, bench falls back to the `PreToolUse` hook
+mtime in `~/.claude/settings.json`.
+
+Metrics reported per CLI: median input tokens per turn, cache-read ratio
+(Claude Code), and the step-change delta between the before/after buckets.
+Sessions without token-count events are skipped silently. Reports contain
+aggregates only — no message content, no filenames beyond the `cwd` root.
+
+Bench is read-only. It does not modify any files (it may write the `--html`
+report to a user-specified path).
 
 ### `tokenmax uninstall all`
 
