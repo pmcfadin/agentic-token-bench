@@ -352,16 +352,7 @@ function applyInstall(action, adapter, agent, changes, state, flags) {
       }
       rollbackStack.push({ path: change.path, hadExisting: existing != null, backupPath });
 
-      let nextContent;
-      if (change.ownership === "managed-block") {
-        nextContent = upsertManagedBlock(existing, change.managedBlock);
-      } else if (change.ownership === "generated") {
-        nextContent = change.content;
-      } else if (change.ownership === "json-fragment") {
-        nextContent = applyClaudeHook(existing, change.jsonFragment);
-      } else {
-        throw new Error(`Unsupported change ownership: ${change.ownership}`);
-      }
+      const nextContent = buildNextContent(change, existing);
 
       try {
         writeFileEnsured(change.path, nextContent);
@@ -444,65 +435,49 @@ function applyInstall(action, adapter, agent, changes, state, flags) {
   }
 }
 
+function buildNextContent(change, existing) {
+  if (change.ownership === "managed-block") return upsertManagedBlock(existing, change.managedBlock);
+  if (change.ownership === "generated") return change.content;
+  if (change.ownership === "json-fragment") return applyClaudeHook(existing, change.jsonFragment);
+  throw new Error(`Unsupported change ownership: ${change.ownership}`);
+}
+
 function applyRepair(adapter, agent, changes, state, flags, priorManifest) {
   const appliedChanges = [];
 
-  // Find the prior agent result to determine if that agent previously failed.
   const priorAgentResult = priorManifest.results
     ? priorManifest.results.find((r) => r.agent === agent.id)
     : null;
+  // A previously-failed (or missing) agent gets every change re-applied fresh,
+  // since we can't trust any recorded hashes to reflect on-disk state.
   const priorFailed = !priorAgentResult || priorAgentResult.status === "failed";
 
   let firstFailure = null;
   let anyRepaired = false;
 
   for (const change of changes) {
-    // Determine repairStatus by comparing against filesystem.
-    let repairStatus;
+    const priorRecord = priorFailed ? null : findChangeRecord(priorManifest, agent.id, change.path);
+    const currentContent = priorRecord ? readFileIfExists(change.path) : null;
 
-    if (priorFailed) {
-      // Prior agent failed or missing — treat every change as fresh.
-      repairStatus = "repaired";
-    } else {
-      const priorRecord = findChangeRecord(priorManifest, agent.id, change.path);
-      if (!priorRecord) {
-        repairStatus = "repaired";
-      } else {
-        // Compute drift using same logic as computeDrift.
-        const currentContent = readFileIfExists(change.path);
-        if (!currentContent) {
-          repairStatus = "repaired";
-        } else if (change.ownership === "managed-block") {
-          const block = extractManagedBlock(currentContent);
-          const currentHash = block ? hashContent(block) : null;
-          repairStatus = currentHash !== priorRecord.blockHash ? "repaired" : "current";
-        } else if (change.ownership === "json-fragment") {
-          const currentHash = hashContent(stableStringify(extractClaudeHook(currentContent)));
-          repairStatus = currentHash !== priorRecord.fragmentHash ? "repaired" : "current";
-        } else {
-          repairStatus =
-            priorRecord.contentHash && hashContent(currentContent) !== priorRecord.contentHash
-              ? "repaired"
-              : "current";
-        }
-      }
-    }
+    const needsRepair =
+      priorFailed ||
+      !priorRecord ||
+      !currentContent ||
+      changeIsDrifted(change.ownership, expectedHashForChange(priorRecord), currentContent);
 
-    if (repairStatus === "current") {
-      const priorRecord = findChangeRecord(priorManifest, agent.id, change.path);
+    if (!needsRepair) {
       appliedChanges.push({
         path: change.path,
         ownership: change.ownership,
         applied: false,
         repairStatus: "current",
-        contentHash: priorRecord ? priorRecord.contentHash : null,
-        blockHash: priorRecord ? priorRecord.blockHash : null,
-        fragmentHash: priorRecord ? priorRecord.fragmentHash : null,
+        contentHash: priorRecord.contentHash || null,
+        blockHash: priorRecord.blockHash || null,
+        fragmentHash: priorRecord.fragmentHash || null,
       });
       continue;
     }
 
-    // repairStatus is "repaired" — write unless dry-run.
     if (flags.dryRun) {
       appliedChanges.push({
         path: change.path,
@@ -515,7 +490,7 @@ function applyRepair(adapter, agent, changes, state, flags, priorManifest) {
     }
 
     try {
-      const existing = readFileIfExists(change.path);
+      const existing = currentContent != null ? currentContent : readFileIfExists(change.path);
       let backupPath;
       try {
         backupPath = recordBackup(state.backupRoot, change.path, existing);
@@ -528,16 +503,7 @@ function applyRepair(adapter, agent, changes, state, flags, priorManifest) {
         });
       }
 
-      let nextContent;
-      if (change.ownership === "managed-block") {
-        nextContent = upsertManagedBlock(existing, change.managedBlock);
-      } else if (change.ownership === "generated") {
-        nextContent = change.content;
-      } else if (change.ownership === "json-fragment") {
-        nextContent = applyClaudeHook(existing, change.jsonFragment);
-      } else {
-        throw new Error(`Unsupported change ownership: ${change.ownership}`);
-      }
+      const nextContent = buildNextContent(change, existing);
 
       try {
         writeFileEnsured(change.path, nextContent);
@@ -572,7 +538,6 @@ function applyRepair(adapter, agent, changes, state, flags, priorManifest) {
     }
   }
 
-  // Aggregate per-agent status.
   let agentStatus;
   if (flags.dryRun) {
     agentStatus = "dry-run";
@@ -768,6 +733,32 @@ function status(env = process.env, flags = {}) {
   };
 }
 
+function expectedHashForChange(change) {
+  if (change.ownership === "managed-block") return change.blockHash;
+  if (change.ownership === "json-fragment") return change.fragmentHash;
+  return change.contentHash;
+}
+
+function changeIsDrifted(ownership, expectedHash, currentContent) {
+  if (currentContent == null) return true;
+  if (ownership === "managed-block") {
+    const block = extractManagedBlock(currentContent);
+    const currentHash = block ? hashContent(block) : null;
+    return currentHash !== expectedHash;
+  }
+  if (ownership === "json-fragment") {
+    const currentHash = hashContent(stableStringify(extractClaudeHook(currentContent)));
+    return currentHash !== expectedHash;
+  }
+  return Boolean(expectedHash) && hashContent(currentContent) !== expectedHash;
+}
+
+function driftReasonFor(ownership) {
+  if (ownership === "managed-block") return "managed_block_changed";
+  if (ownership === "json-fragment") return "json_fragment_changed";
+  return "content_changed";
+}
+
 function computeDrift(results) {
   const drift = [];
   for (const result of results) {
@@ -777,19 +768,8 @@ function computeDrift(results) {
         drift.push({ path: change.path, reason: "missing" });
         continue;
       }
-      if (change.ownership === "managed-block") {
-        const block = extractManagedBlock(currentContent);
-        const currentHash = block ? hashContent(block) : null;
-        if (currentHash !== change.blockHash) {
-          drift.push({ path: change.path, reason: "managed_block_changed" });
-        }
-      } else if (change.ownership === "json-fragment") {
-        const currentHash = hashContent(stableStringify(extractClaudeHook(currentContent)));
-        if (currentHash !== change.fragmentHash) {
-          drift.push({ path: change.path, reason: "json_fragment_changed" });
-        }
-      } else if (change.contentHash && hashContent(currentContent) !== change.contentHash) {
-        drift.push({ path: change.path, reason: "content_changed" });
+      if (changeIsDrifted(change.ownership, expectedHashForChange(change), currentContent)) {
+        drift.push({ path: change.path, reason: driftReasonFor(change.ownership) });
       }
     }
   }

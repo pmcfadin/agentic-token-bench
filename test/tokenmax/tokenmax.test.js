@@ -973,16 +973,10 @@ test("repair of drifted managed block: block restored, user content preserved", 
 
   performInstallLike("install", "claude", baseFlags(), fixture.env);
 
-  // Edit the managed block in place by appending something after the markers, then
-  // overwriting with drifted block content.
   const afterInstall = fs.readFileSync(claudeMd, "utf8");
   assert.match(afterInstall, /tokenmax:start/);
 
-  // Replace block content with drifted version
-  const drifted = afterInstall.replace(
-    /(<!-- tokenmax:start -->)[^]*?(<!-- tokenmax:end -->)/,
-    "$1\nDRIFTED CONTENT\n$2"
-  );
+  const drifted = upsertManagedBlock(afterInstall, "DRIFTED CONTENT");
   fs.writeFileSync(claudeMd, drifted, "utf8");
 
   const repair = performInstallLike("repair", "claude", baseFlags(), fixture.env);
