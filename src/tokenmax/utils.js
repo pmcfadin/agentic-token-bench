@@ -219,6 +219,11 @@ function formatJsonOutput(result) {
       if (entry.recoveryHint) {
         agentEntry.recoveryHint = entry.recoveryHint;
       }
+      if (action === "repair") {
+        agentEntry.files = (entry.changes || [])
+          .filter((c) => c.repairStatus != null)
+          .map((c) => ({ path: c.path, repairStatus: c.repairStatus }));
+      }
       agents[entry.agent] = agentEntry;
     }
   }
@@ -247,11 +252,16 @@ function formatJsonOutput(result) {
     }
   }
 
-  // Build changed_files: paths from applied changes, deduped, sorted
+  // Build changed_files: paths from applied changes, deduped, sorted.
+  // For repair, only include files where repairStatus === "repaired".
   const changedSet = new Set();
   for (const entry of result.results || []) {
     for (const change of entry.changes || []) {
-      if (change.applied === true) {
+      if (action === "repair") {
+        if (change.repairStatus === "repaired") {
+          changedSet.add(change.path);
+        }
+      } else if (change.applied === true) {
         changedSet.add(change.path);
       }
     }
