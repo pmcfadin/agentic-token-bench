@@ -1,6 +1,7 @@
 const { VERSION } = require("./constants");
 const { doctor, performInstallLike, status } = require("./runner");
-const { parseCommand, printOutput } = require("./utils");
+const { bench } = require("./bench/bench");
+const { getHomeDir, parseCommand, printOutput } = require("./utils");
 
 function helpText() {
   return [
@@ -9,6 +10,8 @@ function helpText() {
     "Commands:",
     "  tokenmax doctor",
     "  tokenmax status",
+    "  tokenmax bench [--cli claude,codex,gemini] [--since 30d|YYYY-MM-DD]",
+    "                 [--cwd PATH] [--html FILE] [--json]",
     "  tokenmax install all|claude|codex|gemini",
     "  tokenmax repair all|claude|codex|gemini",
     "  tokenmax uninstall all|claude|codex|gemini",
@@ -41,6 +44,16 @@ async function runCli(argv, env = process.env) {
       break;
     case "status":
       output = status(env, command.flags);
+      break;
+    case "bench":
+      output = bench({
+        homeDir: getHomeDir(env),
+        cliFilter: command.flags.cli,
+        since: command.flags.since,
+        cwd: command.flags.cwd,
+        htmlPath: command.flags.html,
+        json: command.flags.json,
+      });
       break;
     case "install":
     case "repair":

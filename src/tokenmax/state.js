@@ -47,6 +47,11 @@ function saveManifest(homeDir, manifest) {
   writeFileEnsured(paths.current, `${stableStringify(manifest)}\n`);
   const historyPath = path.join(paths.manifestsDir, `${manifest.runId}.json`);
   writeFileEnsured(historyPath, `${stableStringify(manifest)}\n`);
+  // Write installed_at marker on first install; never overwrite so 'tokenmax
+  // bench' can anchor the timeline to the earliest install date.
+  if (!fs.existsSync(paths.installedAtFile)) {
+    writeFileEnsured(paths.installedAtFile, `${manifest.installedAt}\n`);
+  }
   return historyPath;
 }
 

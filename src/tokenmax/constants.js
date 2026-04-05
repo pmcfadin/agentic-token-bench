@@ -19,6 +19,7 @@ const MANIFESTS_DIR = "manifests";
 const BACKUPS_DIR = "backups";
 const LOGS_DIR = "logs";
 const ASSETS_DIR = "assets";
+const INSTALLED_AT_FILE = "installed_at";
 const VALID_SCOPES = ["user", "project"];
 const VALID_MODES = ["stable", "aggressive"];
 
@@ -73,6 +74,7 @@ function statePaths(homeDir) {
     backupsDir: path.join(root, BACKUPS_DIR),
     logsDir: path.join(root, LOGS_DIR),
     assetsDir: path.join(root, ASSETS_DIR),
+    installedAtFile: path.join(root, INSTALLED_AT_FILE),
   };
 }
 

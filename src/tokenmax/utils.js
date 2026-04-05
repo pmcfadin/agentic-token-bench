@@ -90,6 +90,17 @@ function parseValueFlag(argv, i, name, validValues) {
   return { value, nextIndex: i };
 }
 
+function readStringFlag(argv, i, arg, name) {
+  if (arg.includes("=")) {
+    return arg.split("=").slice(1).join("=");
+  }
+  const next = argv[i + 1];
+  if (next == null || next.startsWith("--")) {
+    throw new Error(`Missing value for --${name}`);
+  }
+  return next;
+}
+
 function parseArgs(argv) {
   const { VALID_SCOPES, VALID_MODES } = require("./constants");
   const positionals = [];
@@ -103,6 +114,10 @@ function parseArgs(argv) {
     scope: VALID_SCOPES[0],
     mode: VALID_MODES[0],
     backup: true,
+    since: null,
+    cli: null,
+    cwd: null,
+    html: null,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -133,6 +148,14 @@ function parseArgs(argv) {
       flags.backup = true;
     } else if (arg === "--no-backup") {
       flags.backup = false;
+    } else if (arg === "--since" || arg.startsWith("--since=")) {
+      flags.since = readStringFlag(argv, i, arg, "since"); if (!arg.includes("=")) i++;
+    } else if (arg === "--cli" || arg.startsWith("--cli=")) {
+      flags.cli = readStringFlag(argv, i, arg, "cli"); if (!arg.includes("=")) i++;
+    } else if (arg === "--cwd" || arg.startsWith("--cwd=")) {
+      flags.cwd = readStringFlag(argv, i, arg, "cwd"); if (!arg.includes("=")) i++;
+    } else if (arg === "--html" || arg.startsWith("--html=")) {
+      flags.html = readStringFlag(argv, i, arg, "html"); if (!arg.includes("=")) i++;
     } else if (arg.startsWith("--backup=")) {
       const val = arg.split("=")[1];
       if (val === "false") {
@@ -165,7 +188,7 @@ function parseCommand(argv) {
     return { action: "status", target: "all", flags };
   }
 
-  if (positionals.length === 1 && ["doctor", "status"].includes(positionals[0])) {
+  if (positionals.length === 1 && ["doctor", "status", "bench"].includes(positionals[0])) {
     return { action: positionals[0], target: "all", flags };
   }
 
@@ -273,7 +296,9 @@ function formatJsonOutput(result) {
 
 function printOutput(output, useJson) {
   if (useJson) {
-    process.stdout.write(`${stableStringify(formatJsonOutput(output))}\n`);
+    // Commands that build their own JSON payload (e.g. bench) set output.json.
+    const payload = output.json != null ? output.json : formatJsonOutput(output);
+    process.stdout.write(`${stableStringify(payload)}\n`);
     return;
   }
 
