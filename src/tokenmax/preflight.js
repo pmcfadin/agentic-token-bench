@@ -1,21 +1,18 @@
 const fs = require("fs");
-const path = require("path");
 const { PreflightError } = require("./errors");
-const { ensureDir } = require("./utils");
+const { ensureWritableConfigRoot } = require("./probe");
 
 /**
  * Run preflight checks before any install/repair action.
  *
  * @param {string[]} ids - Agent IDs to check
- * @param {Object} adapterMap - Map of agent ID -> adapter
  * @param {Object} probes - Result of gatherProbes(): { platform, agents, tools }
  * @param {Object} flags - Command flags: { force, dryRun, ... }
  * @returns {{ checks: Array, errors: Array, warnings: Array }}
  */
-function runPreflight(ids, adapterMap, probes, flags = {}) {
+function runPreflight(ids, probes, flags = {}) {
   const checks = [];
 
-  // OS check: hard fail on unsupported platforms
   if (["aix", "sunos"].includes(process.platform)) {
     checks.push({
       agent: null,
@@ -25,30 +22,16 @@ function runPreflight(ids, adapterMap, probes, flags = {}) {
     });
   }
 
-  // Per-agent config root writability check
   for (const id of ids) {
     const probe = probes.agents && probes.agents[id];
     if (!probe || !probe.configRoot) continue;
-
-    // Only check agents that are present (others will be skipped anyway)
     if (probe.status !== "present") continue;
 
+    // In dry-run mode, nonexistent dirs aren't a failure — a real install would create them.
+    if (flags.dryRun && !fs.existsSync(probe.configRoot)) continue;
+
     try {
-      // In dry-run mode, only test writability if the dir already exists.
-      // Nonexistent dirs are fine for dry-run — they'd be created on the real install.
-      if (flags.dryRun) {
-        const dirExists = fs.existsSync(probe.configRoot);
-        if (!dirExists) continue;
-        // Dir exists; test that it's writable
-        const marker = path.join(probe.configRoot, ".tokenmax-preflight");
-        fs.writeFileSync(marker, "ok", "utf8");
-        fs.rmSync(marker, { force: true });
-      } else {
-        ensureDir(probe.configRoot);
-        const marker = path.join(probe.configRoot, ".tokenmax-preflight");
-        fs.writeFileSync(marker, "ok", "utf8");
-        fs.rmSync(marker, { force: true });
-      }
+      ensureWritableConfigRoot(probe.configRoot);
     } catch (err) {
       checks.push({
         agent: id,
@@ -59,7 +42,6 @@ function runPreflight(ids, adapterMap, probes, flags = {}) {
     }
   }
 
-  // Helper tools check (warning only, --force suppresses)
   const toolValues = Object.values(probes.tools || {});
   const helperCount = toolValues.filter((t) => t.status === "present").length;
   if (helperCount === 0 && !flags.force) {
@@ -78,11 +60,6 @@ function runPreflight(ids, adapterMap, probes, flags = {}) {
   };
 }
 
-/**
- * Throw a PreflightError if the preflight result contains any errors.
- *
- * @param {{ checks: Array, errors: Array, warnings: Array }} result
- */
 function assertPreflight(result) {
   if (result.errors.length > 0) {
     const err = new PreflightError({

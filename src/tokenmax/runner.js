@@ -7,7 +7,7 @@ const { geminiAdapter } = require("./agents/gemini");
 const { BackupError, PreflightError, RollbackError, ValidationError, WriteError } = require("./errors");
 const { runPreflight, assertPreflight } = require("./preflight");
 const { extractManagedBlock, removeManagedBlock, upsertManagedBlock } = require("./managed-files");
-const { probeAgents, probeTools, ensureWritableConfigRoot, findProjectRoot } = require("./probe");
+const { probeAgents, probeTools, findProjectRoot } = require("./probe");
 const { captureChangeRecord, findChangeRecord, initializeState, loadCurrentState, makeManifest, recordBackup, saveManifest } = require("./state");
 const { renderToolGuidance } = require("./templates");
 const { ensureDir, getPlatform, hashContent, readFileIfExists, removeFileIfExists, stableStringify, writeFileEnsured } = require("./utils");
@@ -56,7 +56,6 @@ function summarizeToolWarnings(tools) {
 function doctor(target, env = process.env, flags = {}) {
   const probes = gatherProbes(env);
   const selected = selectedAgents(target);
-  const adapterMap = adapters();
   const warnings = summarizeToolWarnings(probes.tools);
   const agentResults = selected.map((id) => ({
     id,
@@ -66,9 +65,8 @@ function doctor(target, env = process.env, flags = {}) {
     supportedSurfaces: probes.agents[id].supportedSurfaces,
   }));
 
-  // Run preflight in collect-and-report mode (never throws).
-  // Pass the original flags so warnings surface; doctor never calls assertPreflight.
-  const preflight = runPreflight(selected, adapterMap, probes, flags);
+  // Collect-and-report only; doctor never calls assertPreflight.
+  const preflight = runPreflight(selected, probes, flags);
 
   return {
     ok: true,
@@ -183,10 +181,31 @@ function performInstallLike(action, target, flags, env = process.env) {
   const adapterMap = adapters();
   const homeDir = probes.platform.homeDir;
 
-  // Phase 2: Preflight — run before any state initialization or writes.
-  // --dry-run still runs preflight; --force suppresses warnings but not hard errors.
+  // Apply scope override BEFORE preflight so writability checks hit the actual target dirs.
+  if (flags.scope === "project") {
+    const projectRoot = findProjectRoot(process.cwd());
+    if (!projectRoot) {
+      return {
+        ok: false,
+        version: VERSION,
+        action,
+        target,
+        mode: flags.mode || "stable",
+        scope: flags.scope || "user",
+        error: "No project root found (no .git directory in parent chain)",
+        text: "Error: --scope project requires a git repository. No .git found.",
+      };
+    }
+    for (const id of ids) {
+      const agent = probes.agents[id];
+      if (agent.status === "present") {
+        agent.configRoot = projectRoot;
+      }
+    }
+  }
+
   try {
-    const preflightResult = runPreflight(ids, adapterMap, probes, flags);
+    const preflightResult = runPreflight(ids, probes, flags);
     assertPreflight(preflightResult);
   } catch (err) {
     if (err instanceof PreflightError) {
@@ -219,29 +238,6 @@ function performInstallLike(action, target, flags, env = process.env) {
   const results = [];
   const globalWarnings = summarizeToolWarnings(probes.tools);
 
-  if (flags.scope === "project") {
-    const projectRoot = findProjectRoot(process.cwd());
-    if (!projectRoot) {
-      return {
-        ok: false,
-        version: VERSION,
-        action,
-        target,
-        mode: flags.mode || "stable",
-        scope: flags.scope || "user",
-        error: "No project root found (no .git directory in parent chain)",
-        text: "Error: --scope project requires a git repository. No .git found.",
-      };
-    }
-    // Override agent config roots to project-local paths
-    for (const id of ids) {
-      const agent = probes.agents[id];
-      if (agent.status === "present") {
-        agent.configRoot = projectRoot;
-      }
-    }
-  }
-
   // Shared assets are managed only on "all" targets to avoid breaking other
   // agents' references when uninstalling a single agent.
   let sharedAssets = [];
@@ -252,6 +248,8 @@ function performInstallLike(action, target, flags, env = process.env) {
       sharedAssets = installSharedAssets(state, probes, flags);
     }
   }
+
+  const priorManifest = action === "uninstall" ? loadCurrentState(homeDir) : null;
 
   for (const id of ids) {
     const adapter = adapterMap[id];
@@ -266,9 +264,6 @@ function performInstallLike(action, target, flags, env = process.env) {
       continue;
     }
 
-    if (!flags.dryRun) {
-      ensureWritableConfigRoot(agent.configRoot);
-    }
     const changes = adapter.planChanges({
       action,
       flags,
@@ -279,8 +274,7 @@ function performInstallLike(action, target, flags, env = process.env) {
     });
 
     if (action === "uninstall") {
-      const priorManifest = loadCurrentState(homeDir);
-      results.push(applyUninstall(adapter, agent, changes, state, flags, priorManifest));
+      results.push(applyUninstall(agent, changes, state, flags, priorManifest));
       continue;
     }
 
@@ -439,7 +433,7 @@ function applyInstall(action, adapter, agent, changes, state, flags) {
   }
 }
 
-function applyUninstall(adapter, agent, changes, state, flags, priorManifest) {
+function applyUninstall(agent, changes, state, flags, priorManifest) {
   const appliedChanges = [];
   const preservedFiles = [];
 
@@ -468,20 +462,16 @@ function applyUninstall(adapter, agent, changes, state, flags, priorManifest) {
         backupPath,
       });
     } else if (change.ownership === "generated") {
-      // Check if the user has modified this file since install.
       const record = findChangeRecord(priorManifest, agent.id, change.path);
-      if (record && record.contentHash) {
+      if (record && record.contentHash && !flags.force) {
         const currentHash = hashContent(existing);
-        if (currentHash !== record.contentHash && !flags.force) {
-          // User-modified: skip deletion and record a warning.
-          const warning = `Preserved ${change.path}: modified since install`;
+        if (currentHash !== record.contentHash) {
           preservedFiles.push(change.path);
           appliedChanges.push({
             path: change.path,
             ownership: change.ownership,
             applied: false,
             preserved: true,
-            warning,
           });
           continue;
         }
@@ -676,7 +666,6 @@ function renderActionText(action, results, warnings, flags) {
     }
   }
 
-  // Collect preserved files across all results.
   const allPreserved = results.flatMap((result) => result.preservedFiles || []);
   if (allPreserved.length > 0) {
     lines.push("", "Preserved due to user modifications:");
